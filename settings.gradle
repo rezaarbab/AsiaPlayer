@@ -1,0 +1,2 @@
+rootProject.name = "AsiaPlayer"
+include ':app'

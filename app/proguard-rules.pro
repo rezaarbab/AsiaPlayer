@@ -1,0 +1,2 @@
+-keep class com.asiaplayer.** { *; }
+-keep class com.google.android.exoplayer2.** { *; }
