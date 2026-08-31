@@ -127,7 +127,8 @@ class EpisodeActivity : AppCompatActivity() {
 
         val selectedHost = SourceRegistry.host(this)
         val family = SourceRegistry.all.find { s -> s.hosts.contains(selectedHost) } ?: SourceRegistry.all[0]
-        val candidates = (listOf(selectedHost) + family.hosts.filter { it != selectedHost })
+        val customHosts = SourceRegistry.getCustomHosts(this)
+        val candidates = (customHosts + listOf(selectedHost) + family.hosts).distinct()
         tryLoadEpisodesOnHosts(candidates, 0)
     }
 
@@ -170,13 +171,16 @@ class EpisodeActivity : AppCompatActivity() {
     private var wvEpDone = false
     private var wvEpHosts = listOf<String>()
     private var wvEpHostIndex = 0
+    private var wvEpFetchPosted = false
 
     private fun loadEpisodesViaWebView(host: String, allHosts: List<String>) {
         wvEpDone = false
+        wvEpFetchPosted = false
         wvEpHosts = allHosts
         wvEpHostIndex = allHosts.indexOf(host).coerceAtLeast(0)
-        log("WebView episode load on $host")
+        log("WebView CF-bypass ep load on $host")
 
+        try { webView.removeJavascriptInterface("EpBridge") } catch (_: Exception) {}
         webView.addJavascriptInterface(object {
             @android.webkit.JavascriptInterface
             fun onResult(json: String) {
@@ -196,30 +200,62 @@ class EpisodeActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun onReceivedSslError(v: WebView, h: SslErrorHandler, e: android.net.http.SslError) { h.proceed() }
             override fun onPageFinished(view: WebView, url: String) {
-                if (wvEpDone) return
-                view.evaluateJavascript("""
-                    (function(){
-                        fetch('/api/DramaList/Drama/$dramaId?isq=true',{headers:{'Accept':'application/json'}})
-                        .then(function(r){return r.text();})
-                        .then(function(t){EpBridge.onResult(t);})
-                        .catch(function(e){EpBridge.onResult('ERR:'+e.message);});
-                    })();
-                """.trimIndent(), null)
+                if (wvEpDone || wvEpFetchPosted) return
+                // Skip CF challenge pages
+                if (url.contains("/cdn-cgi/") || url.contains("challenge") || !url.contains(host)) return
+                wvEpFetchPosted = true
+                log("WebView ep page ready — injecting in 5s")
+                handler.postDelayed({
+                    if (wvEpDone) return@postDelayed
+                    webView.evaluateJavascript("""
+                        (function(){
+                            fetch('/api/DramaList/Drama/$dramaId?isq=true',{
+                                credentials:'include',
+                                headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}
+                            })
+                            .then(function(r){return r.text();})
+                            .then(function(t){if(typeof EpBridge!=='undefined')EpBridge.onResult(t);})
+                            .catch(function(e){if(typeof EpBridge!=='undefined')EpBridge.onResult('ERR:'+e.message);});
+                        })();
+                    """.trimIndent(), null)
+                }, 5_000L)
+            }
+
+            override fun shouldInterceptRequest(view: WebView, request: android.webkit.WebResourceRequest): WebResourceResponse? {
+                val url = request.url.toString()
+                if (!wvEpDone && url.contains("/api/DramaList/Drama/$dramaId")) {
+                    try {
+                        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                        request.requestHeaders.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+                        conn.setRequestProperty("Accept", "application/json")
+                        conn.connect()
+                        val body = conn.inputStream.bufferedReader().readText()
+                        val trimmed = body.trimStart()
+                        if (trimmed.startsWith("{")) {
+                            wvEpDone = true
+                            log("shouldIntercept captured ep JSON ${body.length}B")
+                            SourceRegistry.setHost(this@EpisodeActivity, host)
+                            parseAndShowEpisodes(body, host)
+                        }
+                    } catch (_: Exception) {}
+                }
+                return null
             }
         }
         webView.loadUrl("https://$host/")
         handler.postDelayed({
-            if (!wvEpDone) { log("WebView $host timeout", true); runOnUiThread { tryNextWebViewEpHost() } }
-        }, 20_000L)
+            if (!wvEpDone) { log("WebView $host timeout (35s)", true); runOnUiThread { tryNextWebViewEpHost() } }
+        }, 35_000L)
     }
 
     private fun tryNextWebViewEpHost() {
         wvEpHostIndex++
-        if (wvEpHostIndex >= wvEpHosts.size) {
-            log("All WebView ep hosts failed", true)
-            showEpisodesState("error"); return
+        if (wvEpHostIndex >= minOf(wvEpHosts.size, 3)) {
+            log("All WebView ep hosts exhausted", true)
+            runOnUiThread { showEpisodesState("error") }
+            return
         }
-        loadEpisodesViaWebView(wvEpHosts[wvEpHostIndex], wvEpHosts)
+        runOnUiThread { loadEpisodesViaWebView(wvEpHosts[wvEpHostIndex], wvEpHosts) }
     }
 
     private fun parseAndShowEpisodes(body: String, host: String) {

@@ -136,16 +136,52 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSourcePicker() {
-        val hosts = SourceRegistry.all.flatMap { source -> source.hosts.map { "${source.label}  ·  $it" to it } }
+        val customHosts = SourceRegistry.getCustomHosts(this)
+        val builtIn = SourceRegistry.all.flatMap { source -> source.hosts.map { "${source.label}  ·  $it" to it } }
+        val customEntries = customHosts.map { "Custom  ·  $it" to it }
+        val allEntries = customEntries + builtIn + listOf("＋  Add custom domain…" to "__add__")
         val selected = SourceRegistry.host(this)
+
         AlertDialog.Builder(this)
             .setTitle("Select source")
-            .setSingleChoiceItems(hosts.map { it.first }.toTypedArray(), hosts.indexOfFirst { it.second == selected }) { dialog, which ->
-                SourceRegistry.setHost(this, hosts[which].second)
-                findViewById<TextView>(R.id.sourceButton).text = hosts[which].second.removePrefix("www.").uppercase()
-                log("Source selected: ${hosts[which].second}")
-                dialog.dismiss()
+            .setSingleChoiceItems(allEntries.map { it.first }.toTypedArray(),
+                allEntries.indexOfFirst { it.second == selected }.coerceAtLeast(0)) { dialog, which ->
+                val host = allEntries[which].second
+                if (host == "__add__") {
+                    dialog.dismiss()
+                    showAddDomainDialog()
+                } else {
+                    SourceRegistry.setHost(this, host)
+                    findViewById<TextView>(R.id.sourceButton).text = host.removePrefix("www.").uppercase()
+                    log("Source selected: $host")
+                    dialog.dismiss()
+                }
             }.show()
+    }
+
+    private fun showAddDomainDialog() {
+        val input = android.widget.EditText(this).apply {
+            hint = "e.g. kisskh.co or myasiantv.ac"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+            setPadding(48, 32, 48, 32)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Add custom domain")
+            .setMessage("Enter the domain (without https://). It will be tried first on every search.")
+            .setView(input)
+            .setPositiveButton("Add & use") { _, _ ->
+                val domain = input.text.toString().trim()
+                    .removePrefix("https://").removePrefix("http://").trimEnd('/')
+                if (domain.isNotEmpty() && domain.contains(".")) {
+                    SourceRegistry.addCustomHost(this, domain)
+                    SourceRegistry.setHost(this, domain)
+                    findViewById<TextView>(R.id.sourceButton).text = domain.removePrefix("www.").uppercase()
+                    log("Custom domain added: $domain")
+                    if (lastQuery.isNotEmpty()) searchDrama(lastQuery)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun showState(state: String) {
@@ -205,10 +241,11 @@ class MainActivity : AppCompatActivity() {
         showState("loading")
         log("Searching: $query")
 
-        // Build candidate host list: selected host first, then rest of its family
         val selectedHost = SourceRegistry.host(this)
         val family = SourceRegistry.all.find { s -> s.hosts.contains(selectedHost) } ?: SourceRegistry.all[0]
-        val candidates = (listOf(selectedHost) + family.hosts.filter { it != selectedHost })
+        val customHosts = SourceRegistry.getCustomHosts(this)
+        // Custom domains first, then selected host, then rest of family
+        val candidates = (customHosts + listOf(selectedHost) + family.hosts).distinct()
 
         trySearchOnHosts(query, candidates, 0)
     }
@@ -272,20 +309,32 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    // WebView-based search: loads the site (lets Cloudflare JS challenge run),
-    // then calls the API via fetch() injected into the page context.
+    // ── WebView fallback (Cloudflare bypass) ────────────────────────────────
+    // Strategy:
+    //  1. Load the site homepage — WebView executes CF JS challenge automatically
+    //  2. onPageFinished fires for every redirect; we wait for the REAL page
+    //     (URL matches our host and has no /cdn-cgi/ path)
+    //  3. After an extra 4-second delay (CF async checks), inject fetch()
+    //  4. shouldInterceptRequest also captures any JSON API call the page makes
+
     private var wvSearchQuery = ""
     private var wvSearchHosts = listOf<String>()
     private var wvSearchHostIndex = 0
     private var wvSearchDone = false
+    private var wvCurrentHost = ""
+    private var wvFetchPosted = false
 
     private fun searchViaWebView(query: String, host: String, allHosts: List<String>) {
         wvSearchQuery = query
         wvSearchHosts = allHosts
         wvSearchHostIndex = allHosts.indexOf(host).coerceAtLeast(0)
         wvSearchDone = false
-        log("WebView trying $host")
+        wvCurrentHost = host
+        wvFetchPosted = false
+        log("WebView CF-bypass on $host")
 
+        // Remove old bridge and re-add to avoid duplicate callbacks
+        try { webView.removeJavascriptInterface("AsiaPlayerBridge") } catch (_: Exception) {}
         webView.addJavascriptInterface(object {
             @android.webkit.JavascriptInterface
             fun onResult(json: String) {
@@ -294,8 +343,9 @@ class MainActivity : AppCompatActivity() {
                 if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
                     wvSearchDone = true
                     try {
-                        val arr = if (trimmed.startsWith("[")) JSONArray(json) else JSONArray().also { it.put(JSONObject(json)) }
-                        log("WebView got ${arr.length()} results on $host")
+                        val arr = if (trimmed.startsWith("[")) JSONArray(json)
+                                  else JSONArray().also { it.put(JSONObject(json)) }
+                        log("WebView ✓ ${arr.length()} results on $host")
                         SourceRegistry.setHost(this@MainActivity, host)
                         runOnUiThread {
                             if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
@@ -303,61 +353,100 @@ class MainActivity : AppCompatActivity() {
                         }
                         showResults(query, arr)
                     } catch (e: Exception) {
-                        log("WebView parse error: ${e.message}", true)
-                        tryNextWebViewHost()
+                        log("WebView parse fail: ${e.message}", true)
+                        runOnUiThread { tryNextWebViewHost() }
                     }
                 } else {
-                    log("WebView $host returned non-JSON", true)
-                    tryNextWebViewHost()
+                    log("WebView $host non-JSON: ${json.take(60)}", true)
+                    runOnUiThread { tryNextWebViewHost() }
                 }
             }
         }, "AsiaPlayerBridge")
 
         webView.webViewClient = object : WebViewClient() {
             override fun onReceivedSslError(v: WebView, h: SslErrorHandler, e: android.net.http.SslError) { h.proceed() }
+
             override fun onPageFinished(view: WebView, url: String) {
-                if (wvSearchDone) return
-                // Inject fetch call after page (and CF challenge) has finished loading
-                val encodedQ = Uri.encode(query)
-                view.evaluateJavascript("""
-                    (function(){
-                        fetch('/api/DramaList/Search?q=$encodedQ&type=0', {
-                            headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}
-                        })
-                        .then(function(r){ return r.text(); })
-                        .then(function(t){ AsiaPlayerBridge.onResult(t); })
-                        .catch(function(e){ AsiaPlayerBridge.onResult('ERR:'+e.message); });
-                    })();
-                """.trimIndent(), null)
+                if (wvSearchDone || wvFetchPosted) return
+                // Skip CF challenge intermediate pages
+                if (url.contains("/cdn-cgi/") || url.contains("challenge") || !url.contains(host)) return
+                // Real page loaded — wait for CF async validation to finish, then inject
+                wvFetchPosted = true
+                log("WebView page ready ($url) — injecting in 5s")
+                handler.postDelayed({
+                    if (wvSearchDone) return@postDelayed
+                    injectFetch(view, query)
+                }, 5_000L)
+            }
+
+            override fun shouldInterceptRequest(view: WebView, request: android.webkit.WebResourceRequest): WebResourceResponse? {
+                val url = request.url.toString()
+                // Capture if the page itself makes the Search API call
+                if (!wvSearchDone && url.contains("/api/DramaList/Search")) {
+                    try {
+                        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                        request.requestHeaders.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+                        conn.setRequestProperty("Accept", "application/json")
+                        conn.connect()
+                        val body = conn.inputStream.bufferedReader().readText()
+                        val trimmed = body.trimStart()
+                        if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+                            wvSearchDone = true
+                            log("shouldIntercept captured JSON ${body.length}B")
+                            val arr = if (trimmed.startsWith("[")) JSONArray(body) else JSONArray().also { it.put(JSONObject(body)) }
+                            SourceRegistry.setHost(this@MainActivity, host)
+                            showResults(query, arr)
+                        }
+                    } catch (_: Exception) {}
+                }
+                return null
             }
         }
         webView.loadUrl("https://$host/")
 
-        // Timeout: if no result in 20s, try next host
+        // Per-host timeout: 35s (CF challenge + 5s delay + fetch time)
         handler.postDelayed({
             if (!wvSearchDone) {
-                log("WebView $host timeout", true)
-                tryNextWebViewHost()
+                log("WebView $host timeout (35s)", true)
+                runOnUiThread { tryNextWebViewHost() }
             }
-        }, 20_000L)
+        }, 35_000L)
+    }
+
+    private fun injectFetch(view: WebView, query: String) {
+        val encodedQ = Uri.encode(query)
+        val js = """
+            (function(){
+                fetch('/api/DramaList/Search?q=$encodedQ&type=0',{
+                    credentials:'include',
+                    headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}
+                })
+                .then(function(r){return r.text();})
+                .then(function(t){
+                    if(typeof AsiaPlayerBridge!=='undefined') AsiaPlayerBridge.onResult(t);
+                })
+                .catch(function(e){
+                    if(typeof AsiaPlayerBridge!=='undefined') AsiaPlayerBridge.onResult('ERR:'+e.message);
+                });
+            })();
+        """.trimIndent()
+        view.evaluateJavascript(js, null)
+        log("fetch() injected for $wvCurrentHost")
     }
 
     private fun tryNextWebViewHost() {
+        if (wvSearchDone) return
         wvSearchHostIndex++
-        if (wvSearchHostIndex >= wvSearchHosts.size) {
-            log("All WebView hosts failed", true)
-            runOnUiThread {
-                if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
-                showState("error")
-                errorMessage.text = "All sources failed. Try selecting a different source."
-            }
+        // Only try first 3 WebView hosts to avoid 3-minute waits
+        if (wvSearchHostIndex >= minOf(wvSearchHosts.size, 3)) {
+            log("WebView fallback exhausted", true)
+            if (!screenActive || isFinishing || isDestroyed) return
+            showState("error")
+            errorMessage.text = "Couldn't reach any source.\nTap SOURCE to add a custom domain."
             return
         }
         val nextHost = wvSearchHosts[wvSearchHostIndex]
-        runOnUiThread {
-            if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
-            searchViaWebView(wvSearchQuery, nextHost, wvSearchHosts)
-        }
+        searchViaWebView(wvSearchQuery, nextHost, wvSearchHosts)
     }
 
     private fun showResults(query: String, arr: JSONArray) {

@@ -16,12 +16,32 @@ data class AppSource(
 object SourceRegistry {
     private const val PREFS = "sources"
     private const val HOST = "kisskh_host"
+    private const val CUSTOM_HOSTS = "custom_hosts"
+
     val all: List<AppSource> = listOf(
         AppSource("kisskh", "KissKH", listOf("kisskh.is", "kisskh.nl", "kisskh.do", "kisskh.co", "kisskh.cl", "kisskh.xyz", "kisskh.asia", "kisskh.li", "kisskh.biz", "kisskh.lv", "kisskh.club", "kisskh.ca", "kisskh.pro", "kisskh9.se"), AppSource.Family.KISSKH),
         AppSource("myasiantv", "MyAsianTV", listOf("myasiantv.es", "myasiantv.ac", "myasiantv.cc", "myasiantv.cx", "myasiantv.io", "myasiantv.pe", "myasiantv.tv", "myasiantv.ru", "myasiantv.se", "myasiantv.com.lv", "myasiantv.com.ro", "myasiantv9.com.ro", "myasiantv.biz.tr"), AppSource.Family.MYASIAN_TV)
     )
 
     fun kissKhApi(host: String, path: String): String = "https://$host$path"
-    fun host(context: Context): String = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(HOST, all[0].hosts[0]) ?: all[0].hosts[0]
-    fun setHost(context: Context, host: String) { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(HOST, host).apply() }
+
+    fun host(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(HOST, all[0].hosts[0]) ?: all[0].hosts[0]
+
+    fun setHost(context: Context, host: String) =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(HOST, host).apply()
+
+    fun getCustomHosts(context: Context): List<String> {
+        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(CUSTOM_HOSTS, "") ?: ""
+        return if (raw.isEmpty()) emptyList() else raw.split("|").filter { it.isNotEmpty() }
+    }
+
+    fun addCustomHost(context: Context, host: String) {
+        val existing = getCustomHosts(context).toMutableList()
+        if (!existing.contains(host)) {
+            existing.add(0, host) // newest first
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putString(CUSTOM_HOSTS, existing.joinToString("|")).apply()
+        }
+    }
 }
