@@ -5,6 +5,7 @@
     android:orientation="vertical"
     android:background="@color/background">
 
+    <!-- Header -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="56dp"
@@ -13,7 +14,6 @@
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
         android:background="#1a1a2e">
-
         <TextView
             android:id="@+id/episodeDramaTitle"
             android:layout_width="match_parent"
@@ -22,6 +22,66 @@
             android:textSize="17sp"
             android:textStyle="bold"
             android:singleLine="true" />
+    </LinearLayout>
+
+    <!-- Poster + Info -->
+    <LinearLayout
+        android:id="@+id/infoLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:background="#1a1a2e"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/posterImage"
+            android:layout_width="80dp"
+            android:layout_height="110dp"
+            android:scaleType="centerCrop"
+            android:background="#333" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingStart="12dp">
+
+            <TextView
+                android:id="@+id/infoTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#ffffff"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/infoStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/accent"
+                android:textSize="12sp"
+                android:layout_marginTop="4dp" />
+
+            <TextView
+                android:id="@+id/infoEpisodes"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#888"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp" />
+
+            <TextView
+                android:id="@+id/infoDesc"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#aaa"
+                android:textSize="11sp"
+                android:layout_marginTop="4dp"
+                android:maxLines="3"
+                android:ellipsize="end" />
+        </LinearLayout>
     </LinearLayout>
 
     <ProgressBar
@@ -43,9 +103,8 @@
     <ScrollView
         android:id="@+id/episodeDebugScroll"
         android:layout_width="match_parent"
-        android:layout_height="120dp"
+        android:layout_height="100dp"
         android:background="#0a0a0a">
-
         <TextView
             android:id="@+id/episodeDebugText"
             android:layout_width="match_parent"
