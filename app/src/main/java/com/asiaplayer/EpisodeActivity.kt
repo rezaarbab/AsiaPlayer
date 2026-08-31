@@ -254,8 +254,38 @@ class EpisodeActivity : AppCompatActivity() {
             val status = detail.optString("status", "")
             val description = detail.optString("description", "")
             val country = detail.optString("country", "")
-            airSchedule = detail.optString("airOn", detail.optString("scheduleOn", detail.optString("schedule", "")))
             dramaStatus = status
+            // Try known field names for air schedule
+            airSchedule = detail.optString("airOn",
+                detail.optString("scheduleOn",
+                detail.optString("schedule",
+                detail.optString("broadcastOn",
+                detail.optString("airedOn", "")))))
+            log("Drama keys: ${detail.keys().asSequence().joinToString()}")
+            // Fallback: derive schedule day from latest episode's date field
+            if (airSchedule.isEmpty() && episodes.length() > 0) {
+                val lastEp = episodes.getJSONObject(episodes.length() - 1)
+                log("Ep keys: ${lastEp.keys().asSequence().joinToString()}")
+                val dateStr = lastEp.optString("date",
+                    lastEp.optString("createdAt",
+                    lastEp.optString("airedDate",
+                    lastEp.optString("releaseDate", ""))))
+                if (dateStr.isNotEmpty()) {
+                    log("Last ep date: $dateStr")
+                    try {
+                        val fmts = listOf("MMM d, yyyy", "yyyy-MM-dd", "MM/dd/yyyy", "d MMM yyyy")
+                        val date = fmts.firstNotNullOfOrNull { fmt ->
+                            try { java.text.SimpleDateFormat(fmt, Locale.US).parse(dateStr) } catch (_: Exception) { null }
+                        }
+                        if (date != null) {
+                            val cal = Calendar.getInstance().apply { time = date }
+                            val days = arrayOf("", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+                            airSchedule = days[cal.get(Calendar.DAY_OF_WEEK)]
+                            log("Schedule derived from ep date: $airSchedule")
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
 
             val items = mutableListOf<EpisodeItem>()
             for (i in 0 until episodes.length()) {
