@@ -10,7 +10,7 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 
 class EpisodeAdapter(
-    private val items: List<EpisodeItem>,
+    val items: List<EpisodeItem>,
     private val onClick: (EpisodeItem) -> Unit
 ) : RecyclerView.Adapter<EpisodeAdapter.ViewHolder>() {
 

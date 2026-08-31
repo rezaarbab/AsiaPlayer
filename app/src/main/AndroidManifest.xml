@@ -33,8 +33,10 @@
         <activity
             android:name=".PlayerActivity"
             android:exported="false"
+            android:theme="@style/PlayerTheme"
             android:screenOrientation="landscape"
-            android:configChanges="orientation|screenSize|keyboardHidden" />
+            android:supportsPictureInPicture="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
 
     </application>
 </manifest>

@@ -1,131 +1,541 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/playerRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#000000">
+    android:background="#000000"
+    android:keepScreenOn="true">
 
-    <com.google.android.exoplayer2.ui.StyledPlayerView
+    <!-- Video surface -->
+    <androidx.media3.ui.PlayerView
         android:id="@+id/playerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:use_controller="false"
+        app:resize_mode="fit"
+        android:background="#000000" />
+
+    <!-- Gesture capture layer (above video, below indicators & controls) -->
+    <com.asiaplayer.GestureOverlayView
+        android:id="@+id/gestureOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Back button -->
-    <FrameLayout
-        android:id="@+id/playerBack"
+    <!-- Double-tap flash zones -->
+    <View
+        android:id="@+id/flashLeft"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#33FFFFFF"
+        android:visibility="gone" />
+    <View
+        android:id="@+id/flashRight"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#33FFFFFF"
+        android:visibility="gone" />
+
+    <!-- Brightness indicator (left, center-vertical) -->
+    <LinearLayout
+        android:id="@+id/brightnessIndicator"
         android:layout_width="44dp"
-        android:layout_height="44dp"
-        android:layout_marginTop="70dp"
-        android:layout_marginEnd="16dp"
-        android:background="@drawable/bg_circle_btn"
-        android:clickable="true"
-        android:focusable="true">
+        android:layout_height="180dp"
+        android:layout_gravity="center_vertical|start"
+        android:layout_marginStart="28dp"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:background="@drawable/bg_pill_dark"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:visibility="gone">
 
         <ImageView
-            android:layout_width="20dp"
-            android:layout_height="20dp"
-            android:layout_gravity="center"
-            android:src="@drawable/ic_back" />
-    </FrameLayout>
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:src="@drawable/ic_sun" />
 
+        <FrameLayout
+            android:id="@+id/brightnessTrack"
+            android:layout_width="4dp"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp"
+            android:background="#44FFFFFF">
+
+            <View
+                android:id="@+id/brightnessFill"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_gravity="bottom"
+                android:background="@color/accent" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/brightnessValue"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="50"
+            android:textColor="#FFFFFF"
+            android:textSize="9sp"
+            android:fontFamily="monospace" />
+    </LinearLayout>
+
+    <!-- Volume indicator (right, center-vertical) -->
+    <LinearLayout
+        android:id="@+id/volumeIndicator"
+        android:layout_width="44dp"
+        android:layout_height="180dp"
+        android:layout_gravity="center_vertical|end"
+        android:layout_marginEnd="28dp"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:background="@drawable/bg_pill_dark"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:src="@drawable/ic_volume_up" />
+
+        <FrameLayout
+            android:id="@+id/volumeTrack"
+            android:layout_width="4dp"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp"
+            android:background="#44FFFFFF">
+
+            <View
+                android:id="@+id/volumeFill"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_gravity="bottom"
+                android:background="@color/accent" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/volumeValue"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="50"
+            android:textColor="#FFFFFF"
+            android:textSize="9sp"
+            android:fontFamily="monospace" />
+    </LinearLayout>
+
+    <!-- Center gesture feedback (seek preview, zoom) -->
     <TextView
-        android:id="@+id/subtitleMenu"
+        android:id="@+id/tvGestureFeedback"
         android:layout_width="wrap_content"
-        android:layout_height="40dp"
-        android:layout_alignParentEnd="true"
-        android:layout_alignParentBottom="true"
-        android:layout_marginEnd="16dp"
-        android:layout_marginBottom="62dp"
-        android:gravity="center"
-        android:paddingStart="14dp"
-        android:paddingEnd="14dp"
-        android:text="CC  Subtitle"
-        android:textColor="@color/text"
-        android:textSize="12sp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_pill_dark"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
         android:fontFamily="sans-serif-medium"
-        android:background="@drawable/bg_retry"
-        android:clickable="true"
-        android:focusable="true" />
+        android:visibility="gone" />
 
-    <!-- Subtitle overlay -->
+    <!-- Buffering indicator -->
+    <ProgressBar
+        android:id="@+id/bufferingIndicator"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="center"
+        android:indeterminateTint="@color/accent"
+        android:visibility="visible" />
+
+    <!-- Subtitle overlay (always visible, independent of controls) -->
     <TextView
         android:id="@+id/subtitleView"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
-        android:layout_marginBottom="40dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:layout_marginBottom="90dp"
         android:gravity="center"
-        android:padding="8dp"
-        android:textColor="@color/text"
-        android:textSize="16sp"
-        android:shadowColor="#000"
+        android:padding="4dp"
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:shadowColor="#000000"
         android:shadowRadius="4"
         android:shadowDx="1"
         android:shadowDy="1" />
 
-    <!-- Loading -->
-    <LinearLayout
-        android:id="@+id/loadingOverlay"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_centerInParent="true"
-        android:orientation="vertical"
-        android:gravity="center"
-        android:visibility="gone">
+    <!-- Controls container (auto-hide) -->
+    <FrameLayout
+        android:id="@+id/controlsContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
 
-        <ProgressBar
-            android:id="@+id/loadingView"
+        <!-- Top gradient scrim -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="90dp"
+            android:layout_gravity="top"
+            android:background="@drawable/bg_control_scrim_top" />
+
+        <!-- Bottom gradient scrim -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="130dp"
+            android:layout_gravity="bottom"
+            android:background="@drawable/bg_control_scrim_bottom" />
+
+        <!-- ── Top bar ─────────────────────────────────────────── -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingTop="8dp"
+            android:paddingStart="2dp"
+            android:paddingEnd="8dp">
+
+            <ImageButton
+                android:id="@+id/btnBack"
+                style="@style/PlayerControlIcon"
+                android:src="@drawable/ic_back"
+                android:contentDescription="Back" />
+
+            <!-- Prev episode -->
+            <TextView
+                android:id="@+id/btnPrevEp"
+                android:layout_width="wrap_content"
+                android:layout_height="28dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/bg_pill_dark"
+                android:gravity="center"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="◀ EP"
+                android:textColor="#FFFFFF"
+                android:textSize="9sp"
+                android:fontFamily="sans-serif-medium"
+                android:clickable="true"
+                android:focusable="true"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tvVideoTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:fontFamily="sans-serif-medium" />
+
+            <!-- Next episode -->
+            <TextView
+                android:id="@+id/btnNextEp"
+                android:layout_width="wrap_content"
+                android:layout_height="28dp"
+                android:layout_marginStart="6dp"
+                android:background="@drawable/bg_pill_dark"
+                android:gravity="center"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="EP ▶"
+                android:textColor="#FFFFFF"
+                android:textSize="9sp"
+                android:fontFamily="sans-serif-medium"
+                android:clickable="true"
+                android:focusable="true"
+                android:visibility="gone" />
+
+            <ImageButton
+                android:id="@+id/btnPip"
+                style="@style/PlayerControlIcon"
+                android:src="@drawable/ic_pip"
+                android:contentDescription="Picture in picture" />
+
+            <TextView
+                android:id="@+id/btnSpeed"
+                android:layout_width="wrap_content"
+                android:layout_height="28dp"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/bg_pill_dark"
+                android:gravity="center"
+                android:minWidth="48dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="1.0x"
+                android:textColor="#FFFFFF"
+                android:textSize="9sp"
+                android:fontFamily="sans-serif-medium"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/btnLock"
+                android:layout_width="wrap_content"
+                android:layout_height="28dp"
+                android:layout_marginStart="6dp"
+                android:background="@drawable/bg_pill_dark"
+                android:gravity="center"
+                android:minWidth="48dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="LOCK"
+                android:textColor="#FFFFFF"
+                android:textSize="9sp"
+                android:fontFamily="sans-serif-medium"
+                android:clickable="true"
+                android:focusable="true" />
+        </LinearLayout>
+
+        <!-- HUD chip (top center) -->
+        <TextView
+            android:id="@+id/tvHudChip"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:indeterminateTint="@color/accent" />
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="54dp"
+            android:background="@drawable/bg_pill_dark"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:text="1.0x  ·  0% BUFFERED"
+            android:textColor="#FFFFFF"
+            android:textSize="9sp"
+            android:fontFamily="monospace"
+            android:alpha="0.75" />
+
+        <!-- ── Center transport ────────────────────────────────── -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <ImageButton
+                android:id="@+id/btnRewind"
+                android:layout_width="58dp"
+                android:layout_height="58dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_skip_back"
+                android:contentDescription="−10s" />
+
+            <ImageButton
+                android:id="@+id/btnPlayPause"
+                android:layout_width="76dp"
+                android:layout_height="76dp"
+                android:layout_marginStart="20dp"
+                android:layout_marginEnd="20dp"
+                android:background="@drawable/bg_circle_scrim"
+                android:src="@drawable/ic_play"
+                android:padding="16dp"
+                android:contentDescription="Play/Pause" />
+
+            <ImageButton
+                android:id="@+id/btnForward"
+                android:layout_width="58dp"
+                android:layout_height="58dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_skip_forward"
+                android:contentDescription="+10s" />
+        </LinearLayout>
+
+        <!-- ── Bottom bar ──────────────────────────────────────── -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:orientation="vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="10dp">
+
+            <SeekBar
+                android:id="@+id/seekBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="1000"
+                android:progressTint="@color/accent"
+                android:thumbTint="@color/accent" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="2dp">
+
+                <TextView
+                    android:id="@+id/tvCurrentTime"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="00:00"
+                    android:textColor="#FFFFFF"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text=" / "
+                    android:textColor="#9CA3B0"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/tvTotalTime"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="--:--"
+                    android:textColor="#9CA3B0"
+                    android:textSize="12sp" />
+
+                <!-- Sleep timer indicator -->
+                <TextView
+                    android:id="@+id/tvSleepTimer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="26dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_pill_dark"
+                    android:gravity="center"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:textColor="@color/accent"
+                    android:textSize="9sp"
+                    android:fontFamily="monospace"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/btnMore"
+                    android:layout_width="wrap_content"
+                    android:layout_height="28dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_pill_dark"
+                    android:gravity="center"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="MORE"
+                    android:textColor="#FFFFFF"
+                    android:textSize="9sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+                <TextView
+                    android:id="@+id/btnSubtitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="28dp"
+                    android:background="@drawable/bg_pill_dark"
+                    android:gravity="center"
+                    android:minWidth="40dp"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="CC"
+                    android:textColor="#FFFFFF"
+                    android:textSize="9sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:clickable="true"
+                    android:focusable="true" />
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- ── Lock overlay ──────────────────────────────────────────── -->
+    <FrameLayout
+        android:id="@+id/lockOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone">
+
+        <ImageButton
+            android:id="@+id/btnUnlock"
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            android:layout_gravity="center_vertical|start"
+            android:layout_marginStart="20dp"
+            android:background="@drawable/bg_circle_scrim"
+            android:src="@drawable/ic_lock"
+            android:padding="14dp"
+            android:contentDescription="Unlock" />
 
         <TextView
-            android:id="@+id/loadingText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:text="Fetching stream..."
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-    </LinearLayout>
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="18dp"
+            android:background="@drawable/bg_pill_dark"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="7dp"
+            android:paddingBottom="7dp"
+            android:text="SCREEN LOCKED"
+            android:textColor="#FFFFFF"
+            android:textSize="10sp"
+            android:fontFamily="sans-serif-medium" />
+    </FrameLayout>
 
-    <!-- Error -->
+    <!-- ── Error state ────────────────────────────────────────────── -->
     <LinearLayout
-        android:id="@+id/errorOverlay"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_centerInParent="true"
+        android:id="@+id/errorState"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         android:orientation="vertical"
         android:gravity="center"
-        android:visibility="gone">
+        android:visibility="gone"
+        android:background="#000000">
 
         <ImageView
-            android:layout_width="52dp"
-            android:layout_height="52dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:src="@drawable/ic_error" />
 
         <TextView
-            android:id="@+id/playerErrorText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="Could not load video"
-            android:textColor="@color/text"
-            android:textSize="15sp"
+            android:text="Unable to play"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
             android:fontFamily="sans-serif-medium" />
 
         <TextView
-            android:id="@+id/playerRetry"
+            android:id="@+id/tvPlaybackErrorMessage"
             android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:layout_marginTop="16dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:maxWidth="320dp"
+            android:gravity="center"
+            android:textColor="#9CA3B0"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/btnRetry"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/bg_retry"
             android:gravity="center"
             android:paddingStart="28dp"
             android:paddingEnd="28dp"
             android:text="Try Again"
-            android:textColor="@color/text"
+            android:textColor="#FFFFFF"
             android:textSize="13sp"
             android:fontFamily="sans-serif-medium"
-            android:background="@drawable/bg_retry" />
+            android:clickable="true"
+            android:focusable="true" />
     </LinearLayout>
 
-</RelativeLayout>
+</FrameLayout>

@@ -388,6 +388,8 @@ class EpisodeActivity : AppCompatActivity() {
     }
 
     private fun openPlayer(ep: EpisodeItem, subUrl: String, kkey: String, tracks: List<SubtitleTrack> = emptyList()) {
+        val allEps = adapter.items
+        val currentIndex = allEps.indexOfFirst { it.id == ep.id }.coerceAtLeast(0)
         startActivity(Intent(this, PlayerActivity::class.java).apply {
             putExtra("dramaId", dramaId)
             putExtra("dramaTitle", dramaTitle)
@@ -397,6 +399,9 @@ class EpisodeActivity : AppCompatActivity() {
             putExtra("kkey", kkey)
             putStringArrayListExtra("subtitleLabels", ArrayList(tracks.map { it.label }))
             putStringArrayListExtra("subtitleUrls", ArrayList(tracks.map { it.src }))
+            putIntegerArrayListExtra("episodeIds", ArrayList(allEps.map { it.id }))
+            putIntegerArrayListExtra("episodeNumbers", ArrayList(allEps.map { it.number }))
+            putExtra("currentEpIndex", currentIndex)
         })
     }
 
