@@ -67,7 +67,7 @@ class PlayerActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.playerBack).setOnClickListener { finish() }
         findViewById<TextView>(R.id.playerRetry).setOnClickListener { startPlayback() }
         findViewById<TextView>(R.id.subtitleMenu).setOnClickListener { showSubtitleMenu() }
-        playerView.setControllerVisibilityListener { visibility ->
+        playerView.setControllerVisibilityListener(StyledPlayerView.ControllerVisibilityListener { visibility ->
             findViewById<TextView>(R.id.subtitleMenu).animate()
                 .alpha(if (visibility == View.VISIBLE) 1f else 0f)
                 .setDuration(180)
@@ -75,7 +75,7 @@ class PlayerActivity : AppCompatActivity() {
                     findViewById<TextView>(R.id.subtitleMenu).visibility =
                         if (visibility == View.VISIBLE) View.VISIBLE else View.INVISIBLE
                 }.start()
-        }
+        })
 
         if (subUrl.isNotEmpty()) {
             loadSubtitle(subUrl)
