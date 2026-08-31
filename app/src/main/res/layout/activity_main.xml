@@ -3,62 +3,77 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/background">
+    android:background="#0a0a0a">
 
+    <!-- Top bar -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="60dp"
+        android:layout_height="56dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="16dp"
+        android:paddingStart="20dp"
         android:paddingEnd="16dp"
-        android:background="#1a1a2e">
+        android:background="#0a0a0a">
 
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="AsiaPlayer"
-            android:textColor="@color/accent"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+            android:text="ASIA"
+            android:textColor="#E50914"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.15" />
 
         <View
             android:id="@+id/statusDot"
-            android:layout_width="8dp"
-            android:layout_height="8dp"
-            android:background="#888888" />
+            android:layout_width="6dp"
+            android:layout_height="6dp"
+            android:background="#333333" />
     </LinearLayout>
 
+    <!-- Search bar -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:padding="12dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="12dp"
         android:gravity="center_vertical">
 
-        <EditText
-            android:id="@+id/searchInput"
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="44dp"
             android:layout_weight="1"
-            android:hint="Search drama or movie..."
-            android:textColor="@color/text"
-            android:background="#1a1a2e"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:inputType="text"
-            android:imeOptions="actionSearch"
-            android:singleLine="true" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@drawable/search_bg"
+            android:paddingStart="14dp"
+            android:paddingEnd="8dp">
 
-        <Button
-            android:id="@+id/searchBtn"
-            android:layout_width="wrap_content"
-            android:layout_height="44dp"
-            android:layout_marginStart="8dp"
-            android:text="Search"
-            android:textColor="#000"
-            android:backgroundTint="@color/accent" />
+            <EditText
+                android:id="@+id/searchInput"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:hint="Search drama, movie..."
+                android:textColor="#ffffff"
+                android:textSize="14sp"
+                android:background="@android:color/transparent"
+                android:inputType="text"
+                android:imeOptions="actionSearch"
+                android:singleLine="true" />
+
+            <Button
+                android:id="@+id/searchBtn"
+                android:layout_width="72dp"
+                android:layout_height="34dp"
+                android:text="Search"
+                android:textColor="#ffffff"
+                android:textSize="12sp"
+                android:backgroundTint="#E50914" />
+        </LinearLayout>
     </LinearLayout>
 
     <ProgressBar
@@ -66,7 +81,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center_horizontal"
-        android:indeterminateTint="@color/accent"
+        android:indeterminateTint="#E50914"
         android:visibility="gone" />
 
     <androidx.recyclerview.widget.RecyclerView
@@ -76,22 +91,19 @@
         android:layout_weight="1"
         android:padding="8dp" />
 
-    <!-- Debug Console -->
     <ScrollView
         android:id="@+id/debugScroll"
         android:layout_width="match_parent"
-        android:layout_height="150dp"
-        android:background="#0a0a0a"
-        android:visibility="visible">
-
+        android:layout_height="80dp"
+        android:background="#050505">
         <TextView
             android:id="@+id/debugText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="#00ff88"
-            android:textSize="10sp"
+            android:textSize="9sp"
             android:fontFamily="monospace"
-            android:padding="8dp" />
+            android:padding="6dp" />
     </ScrollView>
 
     <WebView
