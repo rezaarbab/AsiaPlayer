@@ -13,7 +13,6 @@ import android.view.View
 import android.webkit.*
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.Toolbar
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import okhttp3.*
@@ -38,7 +37,7 @@ class EpisodeActivity : AppCompatActivity() {
 
     private fun log(msg: String, isError: Boolean = false) {
         val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-        val line = "[$time] ${if (isError) "❌" else "✅"} $msg\n"
+        val line = "[$time] ${if (isError) "X" else "OK"} $msg\n"
         handler.post {
             debugText.append(line)
             debugScroll.post { debugScroll.fullScroll(ScrollView.FOCUS_DOWN) }
@@ -51,11 +50,6 @@ class EpisodeActivity : AppCompatActivity() {
         dramaTitle = intent.getStringExtra("dramaTitle") ?: ""
         setContentView(R.layout.activity_episodes)
 
-        val toolbar = findViewById<Toolbar>(R.id.toolbar)
-        setSupportActionBar(toolbar)
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        toolbar.setNavigationOnClickListener { onBackPressed() }
-
         val recycler = findViewById<RecyclerView>(R.id.episodeRecycler)
         val loading = findViewById<ProgressBar>(R.id.episodeLoading)
         debugText = findViewById(R.id.episodeDebugText)
@@ -64,6 +58,9 @@ class EpisodeActivity : AppCompatActivity() {
         recycler.layoutManager = LinearLayoutManager(this)
         webView = findViewById(R.id.episodeWebView)
         WebViewHelper.setup(webView)
+
+        // دکمه بازگشت
+        findViewById<TextView>(R.id.backBtn).setOnClickListener { finish() }
 
         log("Loading: $dramaTitle")
         loadEpisodes(recycler, loading)
@@ -100,7 +97,7 @@ class EpisodeActivity : AppCompatActivity() {
                         items.add(EpisodeItem(ep.getInt("id"), num, ep.optInt("sub", 0) > 0))
                     }
 
-                    log("${items.size} episodes loaded")
+                    log("${items.size} episodes")
                     runOnUiThread {
                         loading.visibility = View.GONE
                         setupInfo(thumbnail, status, description, country, items.size)
@@ -122,8 +119,8 @@ class EpisodeActivity : AppCompatActivity() {
         val epsView = findViewById<TextView>(R.id.infoEpisodes)
         val countryView = findViewById<TextView>(R.id.infoCountry)
         val descView = findViewById<TextView>(R.id.infoDesc)
-        val posterView = findViewById<android.widget.ImageView>(R.id.posterImage)
-        val backdropView = findViewById<android.widget.ImageView>(R.id.backdropImage)
+        val posterView = findViewById<ImageView>(R.id.posterImage)
+        val backdropView = findViewById<ImageView>(R.id.backdropImage)
 
         titleView.text = dramaTitle
         statusView.text = status
@@ -135,9 +132,7 @@ class EpisodeActivity : AppCompatActivity() {
             val req = Request.Builder().url(thumbnail)
                 .header("User-Agent", "Mozilla/5.0").build()
             client.newCall(req).enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    log("Poster failed", true)
-                }
+                override fun onFailure(call: Call, e: IOException) {}
                 override fun onResponse(call: Call, response: Response) {
                     val bytes = response.body?.bytes() ?: return
                     val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
@@ -145,7 +140,6 @@ class EpisodeActivity : AppCompatActivity() {
                         posterView.setImageBitmap(bitmap)
                         backdropView.setImageBitmap(bitmap)
                     }
-                    log("Poster loaded")
                 }
             })
         }
@@ -159,8 +153,8 @@ class EpisodeActivity : AppCompatActivity() {
         var keyFound = false
 
         webView.webViewClient = object : WebViewClient() {
-            override fun onReceivedSslError(view: WebView, h: SslErrorHandler, e: android.net.http.SslError) { h.proceed() }
-            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+            override fun onReceivedSslError(v: WebView, h: SslErrorHandler, e: android.net.http.SslError) { h.proceed() }
+            override fun shouldInterceptRequest(v: WebView, request: WebResourceRequest): WebResourceResponse? {
                 val url = request.url.toString()
                 if (!keyFound && url.contains("/api/Sub/${ep.id}") && url.contains("kkey=")) {
                     val kkey = url.substringAfter("kkey=").substringBefore("&").trim()
@@ -213,7 +207,7 @@ class EpisodeActivity : AppCompatActivity() {
                         }
                     }
                 } catch (e: Exception) {
-                    log("Sub parse error: ${e.message}", true)
+                    log("Sub error: ${e.message}", true)
                 }
                 runOnUiThread { isGettingKey = false; showDialog(ep, tracks, kkey) }
             }
@@ -222,14 +216,14 @@ class EpisodeActivity : AppCompatActivity() {
 
     private fun showDialog(ep: EpisodeItem, tracks: List<SubtitleTrack>, kkey: String) {
         val options = mutableListOf<String>()
-        options.add("▶  Play without subtitle")
-        tracks.forEach { options.add("▶  ${it.label}") }
+        options.add("Play without subtitle")
+        tracks.forEach { options.add("Play - ${it.label}") }
         if (tracks.isNotEmpty()) {
-            options.add("──────────────")
-            tracks.forEach { options.add("⬇  Download ${it.label}") }
+            options.add("---")
+            tracks.forEach { options.add("Download - ${it.label}") }
         }
 
-        android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        android.app.AlertDialog.Builder(this)
             .setTitle("Episode ${ep.number}")
             .setItems(options.toTypedArray()) { _, which ->
                 when {
