@@ -13,22 +13,27 @@ class EpisodeAdapter(
 ) : RecyclerView.Adapter<EpisodeAdapter.ViewHolder>() {
 
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-        val title: TextView = view.findViewById(R.id.titleText)
-        val episode: TextView = view.findViewById(R.id.episodeText)
-        val status: TextView = view.findViewById(R.id.statusText)
+        val number: TextView = view.findViewById(R.id.epNumber)
+        val title: TextView = view.findViewById(R.id.epTitle)
+        val subStatus: TextView = view.findViewById(R.id.epSubStatus)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_drama, parent, false)
+        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_episode, parent, false)
         return ViewHolder(view)
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val item = items[position]
+        holder.number.text = item.number.toString()
         holder.title.text = "Episode ${item.number}"
-        holder.episode.text = if (item.hasSub) "✅ Subtitle available" else "⏳ No subtitle yet"
-        holder.episode.setTextColor(if (item.hasSub) Color.parseColor("#00ff88") else Color.parseColor("#888888"))
-        holder.status.text = ""
+        if (item.hasSub) {
+            holder.subStatus.text = "Subtitle available"
+            holder.subStatus.setTextColor(Color.parseColor("#00C853"))
+        } else {
+            holder.subStatus.text = "No subtitle yet"
+            holder.subStatus.setTextColor(Color.parseColor("#666666"))
+        }
         holder.itemView.setOnClickListener { onClick(item) }
     }
 
