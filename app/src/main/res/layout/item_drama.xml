@@ -19,7 +19,7 @@
             android:layout_height="match_parent"
             android:scaleType="centerCrop"
             android:src="@drawable/bg_poster_placeholder"
-            app:shapeAppearanceOverlay="@style/Shape.Poster" />
+            app:shapeAppearanceOverlay="@style/PosterShape" />
 
         <View
             android:layout_width="match_parent"

@@ -61,7 +61,7 @@
                 android:layout_height="132dp"
                 android:scaleType="centerCrop"
                 android:src="@drawable/bg_poster_placeholder"
-                app:shapeAppearanceOverlay="@style/Shape.PosterSmall" />
+                app:shapeAppearanceOverlay="@style/PosterSmallShape" />
 
             <LinearLayout
                 android:layout_width="0dp"
