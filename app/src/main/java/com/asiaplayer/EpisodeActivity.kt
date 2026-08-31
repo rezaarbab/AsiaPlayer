@@ -6,11 +6,13 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.CountDownTimer
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.Gravity
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.*
 import android.widget.*
@@ -45,6 +47,9 @@ class EpisodeActivity : AppCompatActivity() {
     private var isGettingKey = false
     private var dataLoaded = false
     private var skeletonAnim: ObjectAnimator? = null
+    private var airSchedule = ""   // e.g. "Tuesday" from API
+    private var dramaStatus = ""
+    private var countdownTimer: CountDownTimer? = null
 
     data class SubtitleTrack(val lang: String, val label: String, val src: String)
 
@@ -187,6 +192,7 @@ class EpisodeActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 if (wvEpDone) return
+                log("WV ep page: $url (phase=$phase)")
                 if (url.contains("/cdn-cgi/") || url.contains("challenge-")) return
 
                 when {
@@ -194,10 +200,10 @@ class EpisodeActivity : AppCompatActivity() {
                         phase = 1
                         val apiUrl = "https://$host/api/DramaList/Drama/$dramaId?isq=true"
                         log("Phase 1: navigating to drama API")
-                        handler.postDelayed({ view.loadUrl(apiUrl) }, 500L)
+                        handler.postDelayed({ view.loadUrl(apiUrl) }, 800L)
                     }
-                    phase == 1 && url.contains("/api/DramaList/Drama/") -> {
-                        log("Phase 2: reading drama API response")
+                    phase == 1 -> {
+                        log("Phase 2: reading body from $url")
                         view.evaluateJavascript(
                             "(function(){ return document.body.textContent || document.body.innerText; })()"
                         ) { raw ->
@@ -207,12 +213,15 @@ class EpisodeActivity : AppCompatActivity() {
                             } catch (_: Exception) { raw.trim().removeSurrounding("\"") }
 
                             val trimmed = json.trimStart()
+                            log("Body: ${trimmed.take(80)}")
                             if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
                                 wvEpDone = true
                                 SourceRegistry.setHost(this@EpisodeActivity, host)
                                 parseAndShowEpisodes(json, host)
+                            } else if (trimmed.startsWith("<") || trimmed.contains("<!DOCTYPE")) {
+                                log("Still HTML at phase 1, waiting...", true)
                             } else {
-                                log("$host ep API returned HTML — next", true)
+                                log("$host ep unexpected response — next", true)
                                 runOnUiThread { tryNextWebViewEpHost() }
                             }
                         }
@@ -245,6 +254,8 @@ class EpisodeActivity : AppCompatActivity() {
             val status = detail.optString("status", "")
             val description = detail.optString("description", "")
             val country = detail.optString("country", "")
+            airSchedule = detail.optString("airOn", detail.optString("scheduleOn", detail.optString("schedule", "")))
+            dramaStatus = status
 
             val items = mutableListOf<EpisodeItem>()
             for (i in 0 until episodes.length()) {
@@ -351,19 +362,27 @@ class EpisodeActivity : AppCompatActivity() {
         }
         webView.loadUrl(pageUrl)
 
-        // اگه استریم نیومد => کاربر به جای پلیر خراب، خطا + Retry میبینه
         handler.postDelayed({
             if (!keyFound && isGettingKey) {
                 isGettingKey = false
                 adapter.setLocked(false)
                 adapter.notifyDataSetChanged()
                 log("Stream key timeout", true)
-                AlertDialog.Builder(this)
-                    .setTitle("Episode ${ep.number}")
-                    .setMessage("Couldn't load this episode. The stream didn't respond.")
-                    .setPositiveButton("Retry") { d, _ -> d.dismiss(); getKeyAndPlay(ep) }
-                    .setNegativeButton("Cancel", null)
-                    .show()
+                runOnUiThread {
+                    val allEps = adapter.items
+                    val isLatestEp = ep.number >= (allEps.maxOfOrNull { it.number } ?: 0)
+                    val targetMs = nextAirTimeMs(airSchedule)
+                    if (dramaStatus.equals("Ongoing", ignoreCase = true) && isLatestEp && targetMs > 0) {
+                        showCountdownDialog(ep, targetMs)
+                    } else {
+                        AlertDialog.Builder(this)
+                            .setTitle("Episode ${ep.number}")
+                            .setMessage("Couldn't load this episode. The stream didn't respond.")
+                            .setPositiveButton("Retry") { d, _ -> d.dismiss(); getKeyAndPlay(ep) }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
+                }
             }
         }, 45000)
     }
@@ -502,9 +521,110 @@ class EpisodeActivity : AppCompatActivity() {
         })
     }
 
+    private fun showCountdownDialog(ep: EpisodeItem, targetMs: Long) {
+        val dialog = Dialog(this)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.BLACK)
+            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            setPadding(dp(32), dp(64), dp(32), dp(64))
+        }
+
+        root.addView(TextView(this).apply {
+            text = dramaTitle
+            setTextColor(Color.rgb(82, 130, 220))
+            textSize = 24f
+            gravity = Gravity.CENTER
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setPadding(0, 0, 0, dp(4))
+        })
+        val schedLabel = airSchedule.trim().replaceFirstChar { it.uppercaseChar() }
+        root.addView(TextView(this).apply {
+            text = "(Every $schedLabel)"
+            setTextColor(Color.rgb(82, 130, 220))
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(40))
+        })
+
+        fun makeCell(label: String): Pair<LinearLayout, TextView> {
+            val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(6), 0, dp(6), 0) }
+            val num = TextView(this).apply { text = "00"; setTextColor(Color.WHITE); textSize = 56f; gravity = Gravity.CENTER; typeface = android.graphics.Typeface.DEFAULT_BOLD }
+            val lbl = TextView(this).apply { text = label; setTextColor(Color.WHITE); textSize = 11f; gravity = Gravity.CENTER }
+            col.addView(num); col.addView(lbl)
+            return col to num
+        }
+        fun makeSep() = TextView(this).apply { text = ":"; setTextColor(Color.WHITE); textSize = 44f; gravity = Gravity.CENTER; setPadding(0, 0, 0, dp(18)) }
+
+        val countRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        val (dayCol, dayNum) = makeCell("DAYS")
+        val (hrCol, hrNum) = makeCell("HOURS")
+        val (minCol, minNum) = makeCell("MINUTES")
+        val (secCol, secNum) = makeCell("SECONDS")
+        countRow.addView(dayCol); countRow.addView(makeSep())
+        countRow.addView(hrCol); countRow.addView(makeSep())
+        countRow.addView(minCol); countRow.addView(makeSep())
+        countRow.addView(secCol)
+        root.addView(countRow)
+
+        root.addView(TextView(this).apply {
+            text = "$dramaTitle\nEpisode ${ep.number} • Coming Soon"
+            setTextColor(Color.rgb(140, 140, 140))
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setPadding(0, dp(32), 0, 0)
+        })
+
+        dialog.setContentView(root)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.black)
+        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+
+        countdownTimer?.cancel()
+        val remaining0 = (targetMs - System.currentTimeMillis()).coerceAtLeast(0L)
+        countdownTimer = object : CountDownTimer(remaining0, 1000) {
+            override fun onTick(r: Long) {
+                dayNum.text = "%02d".format(r / 86400000L)
+                hrNum.text = "%02d".format(r % 86400000L / 3600000L)
+                minNum.text = "%02d".format(r % 3600000L / 60000L)
+                secNum.text = "%02d".format(r % 60000L / 1000L)
+            }
+            override fun onFinish() { dayNum.text = "00"; hrNum.text = "00"; minNum.text = "00"; secNum.text = "00" }
+        }.start()
+
+        dialog.setOnDismissListener { countdownTimer?.cancel() }
+        dialog.show()
+    }
+
+    private fun nextAirTimeMs(airOn: String): Long {
+        if (airOn.isBlank()) return -1L
+        val day = airOn.trim().lowercase()
+        val targetDay = when {
+            day.contains("sun") -> Calendar.SUNDAY
+            day.contains("mon") -> Calendar.MONDAY
+            day.contains("tue") -> Calendar.TUESDAY
+            day.contains("wed") -> Calendar.WEDNESDAY
+            day.contains("thu") -> Calendar.THURSDAY
+            day.contains("fri") -> Calendar.FRIDAY
+            day.contains("sat") -> Calendar.SATURDAY
+            else -> return -1L
+        }
+        val cal = Calendar.getInstance()
+        val today = cal.get(Calendar.DAY_OF_WEEK)
+        var daysUntil = (targetDay - today + 7) % 7
+        if (daysUntil == 0) daysUntil = 7
+        cal.add(Calendar.DAY_OF_YEAR, daysUntil)
+        cal.set(Calendar.HOUR_OF_DAY, 21)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         stopSkeletonPulse()
+        countdownTimer?.cancel()
     }
 }
 

@@ -343,31 +343,29 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 if (wvSearchDone) return
+                log("WV page: $url (phase=$phase)")
                 if (url.contains("/cdn-cgi/") || url.contains("challenge-")) return
 
                 when {
                     phase == 0 && url.contains(host) -> {
                         phase = 1
-                        // Homepage loaded with CF cookies — now navigate to the API URL.
-                        // WebView carries its cookies + Chrome TLS fingerprint → CF accepts it.
                         val apiUrl = "https://$host/api/DramaList/Search?q=${Uri.encode(query)}&type=0"
                         log("Phase 1: navigating to API URL")
-                        handler.postDelayed({ view.loadUrl(apiUrl) }, 500L)
+                        handler.postDelayed({ view.loadUrl(apiUrl) }, 800L)
                     }
-                    phase == 1 && url.contains("/api/DramaList/Search") -> {
-                        // Read the raw JSON the browser is displaying
-                        log("Phase 2: reading API response from page")
+                    phase == 1 -> {
+                        // Read whatever page loaded after we navigated to the API URL
+                        log("Phase 2: reading body from $url")
                         view.evaluateJavascript(
                             "(function(){ return document.body.textContent || document.body.innerText; })()"
                         ) { raw ->
                             if (wvSearchDone) return@evaluateJavascript
                             val json = try {
-                                // evaluateJavascript returns a JS-quoted string — decode it
                                 org.json.JSONTokener(raw).nextValue().toString()
                             } catch (_: Exception) { raw.trim().removeSurrounding("\"") }
 
                             val trimmed = json.trimStart()
-                            log("API page content: ${trimmed.take(60)}")
+                            log("Body: ${trimmed.take(80)}")
                             if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
                                 wvSearchDone = true
                                 try {
@@ -385,8 +383,12 @@ class MainActivity : AppCompatActivity() {
                                     log("Parse error: ${e.message}", true)
                                     runOnUiThread { tryNextWebViewHost() }
                                 }
+                            } else if (trimmed.startsWith("<") || trimmed.contains("<!DOCTYPE")) {
+                                // Still getting HTML — reset to phase 0 and wait for real page
+                                log("Still HTML at phase 1, waiting...", true)
+                                // Don't advance host yet; the CF challenge may still be resolving
                             } else {
-                                log("$host API returned HTML — next host", true)
+                                log("$host unexpected response — next host", true)
                                 runOnUiThread { tryNextWebViewHost() }
                             }
                         }
