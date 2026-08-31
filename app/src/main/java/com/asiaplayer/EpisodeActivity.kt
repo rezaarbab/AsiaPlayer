@@ -371,9 +371,8 @@ class EpisodeActivity : AppCompatActivity() {
                 runOnUiThread {
                     val allEps = adapter.items
                     val isLatestEp = ep.number >= (allEps.maxOfOrNull { it.number } ?: 0)
-                    val targetMs = nextAirTimeMs(airSchedule)
-                    if (dramaStatus.equals("Ongoing", ignoreCase = true) && isLatestEp && targetMs > 0) {
-                        showCountdownDialog(ep, targetMs)
+                    if (dramaStatus.equals("Ongoing", ignoreCase = true) && isLatestEp) {
+                        showCountdownDialog(ep, nextAirTimeMs(airSchedule))
                     } else {
                         AlertDialog.Builder(this)
                             .setTitle("Episode ${ep.number}")
@@ -384,7 +383,7 @@ class EpisodeActivity : AppCompatActivity() {
                     }
                 }
             }
-        }, 45000)
+        }, 15000)
     }
 
     private fun fetchSubs(ep: EpisodeItem, kkey: String) {
@@ -531,6 +530,9 @@ class EpisodeActivity : AppCompatActivity() {
             setPadding(dp(32), dp(64), dp(32), dp(64))
         }
 
+        val schedLabel = airSchedule.trim().replaceFirstChar { it.uppercaseChar() }
+        val hasSchedule = airSchedule.isNotBlank() && targetMs > 0
+
         root.addView(TextView(this).apply {
             text = dramaTitle
             setTextColor(Color.rgb(82, 130, 220))
@@ -539,59 +541,93 @@ class EpisodeActivity : AppCompatActivity() {
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             setPadding(0, 0, 0, dp(4))
         })
-        val schedLabel = airSchedule.trim().replaceFirstChar { it.uppercaseChar() }
         root.addView(TextView(this).apply {
-            text = "(Every $schedLabel)"
+            text = if (hasSchedule) "(Every $schedLabel)" else "Ongoing"
             setTextColor(Color.rgb(82, 130, 220))
             textSize = 16f
             gravity = Gravity.CENTER
             setPadding(0, 0, 0, dp(40))
         })
 
-        fun makeCell(label: String): Pair<LinearLayout, TextView> {
-            val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(6), 0, dp(6), 0) }
-            val num = TextView(this).apply { text = "00"; setTextColor(Color.WHITE); textSize = 56f; gravity = Gravity.CENTER; typeface = android.graphics.Typeface.DEFAULT_BOLD }
-            val lbl = TextView(this).apply { text = label; setTextColor(Color.WHITE); textSize = 11f; gravity = Gravity.CENTER }
-            col.addView(num); col.addView(lbl)
-            return col to num
-        }
-        fun makeSep() = TextView(this).apply { text = ":"; setTextColor(Color.WHITE); textSize = 44f; gravity = Gravity.CENTER; setPadding(0, 0, 0, dp(18)) }
+        if (hasSchedule) {
+            fun makeCell(label: String): Pair<LinearLayout, TextView> {
+                val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(6), 0, dp(6), 0) }
+                val num = TextView(this).apply { text = "00"; setTextColor(Color.WHITE); textSize = 56f; gravity = Gravity.CENTER; typeface = android.graphics.Typeface.DEFAULT_BOLD }
+                val lbl = TextView(this).apply { text = label; setTextColor(Color.WHITE); textSize = 11f; gravity = Gravity.CENTER }
+                col.addView(num); col.addView(lbl)
+                return col to num
+            }
+            fun makeSep() = TextView(this).apply { text = ":"; setTextColor(Color.WHITE); textSize = 44f; gravity = Gravity.CENTER; setPadding(0, 0, 0, dp(18)) }
 
-        val countRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        val (dayCol, dayNum) = makeCell("DAYS")
-        val (hrCol, hrNum) = makeCell("HOURS")
-        val (minCol, minNum) = makeCell("MINUTES")
-        val (secCol, secNum) = makeCell("SECONDS")
-        countRow.addView(dayCol); countRow.addView(makeSep())
-        countRow.addView(hrCol); countRow.addView(makeSep())
-        countRow.addView(minCol); countRow.addView(makeSep())
-        countRow.addView(secCol)
-        root.addView(countRow)
+            val countRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+            val (dayCol, dayNum) = makeCell("DAYS")
+            val (hrCol, hrNum) = makeCell("HOURS")
+            val (minCol, minNum) = makeCell("MINUTES")
+            val (secCol, secNum) = makeCell("SECONDS")
+            countRow.addView(dayCol); countRow.addView(makeSep())
+            countRow.addView(hrCol); countRow.addView(makeSep())
+            countRow.addView(minCol); countRow.addView(makeSep())
+            countRow.addView(secCol)
+            root.addView(countRow)
+
+            countdownTimer?.cancel()
+            val remaining0 = (targetMs - System.currentTimeMillis()).coerceAtLeast(0L)
+            countdownTimer = object : CountDownTimer(remaining0, 1000) {
+                override fun onTick(r: Long) {
+                    dayNum.text = "%02d".format(r / 86400000L)
+                    hrNum.text = "%02d".format(r % 86400000L / 3600000L)
+                    minNum.text = "%02d".format(r % 3600000L / 60000L)
+                    secNum.text = "%02d".format(r % 60000L / 1000L)
+                }
+                override fun onFinish() { dayNum.text = "00"; hrNum.text = "00"; minNum.text = "00"; secNum.text = "00" }
+            }.start()
+        } else {
+            // No schedule info — show "Coming Soon" screen
+            root.addView(TextView(this).apply {
+                text = "🎬"
+                textSize = 64f
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, dp(24))
+            })
+            root.addView(TextView(this).apply {
+                text = "Episode ${ep.number} hasn't been\nreleased yet"
+                setTextColor(Color.WHITE)
+                textSize = 20f
+                gravity = Gravity.CENTER
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setPadding(0, 0, 0, dp(12))
+            })
+            root.addView(TextView(this).apply {
+                text = "Check back when the new episode airs"
+                setTextColor(Color.rgb(140, 140, 140))
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, dp(40))
+            })
+        }
 
         root.addView(TextView(this).apply {
-            text = "$dramaTitle\nEpisode ${ep.number} • Coming Soon"
-            setTextColor(Color.rgb(140, 140, 140))
-            textSize = 13f
+            text = "$dramaTitle  ·  Episode ${ep.number}"
+            setTextColor(Color.rgb(100, 100, 100))
+            textSize = 12f
             gravity = Gravity.CENTER
-            setPadding(0, dp(32), 0, 0)
+            setPadding(0, dp(32), 0, dp(16))
+        })
+
+        // Retry button
+        root.addView(TextView(this).apply {
+            text = "Retry"
+            setTextColor(Color.rgb(255, 107, 0))
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setPadding(dp(32), dp(12), dp(32), dp(12))
+            background = GradientDrawable().apply { setColor(Color.rgb(40, 40, 40)); cornerRadius = dp(24).toFloat() }
+            setOnClickListener { dialog.dismiss(); getKeyAndPlay(ep) }
         })
 
         dialog.setContentView(root)
         dialog.window?.setBackgroundDrawableResource(android.R.color.black)
         dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-
-        countdownTimer?.cancel()
-        val remaining0 = (targetMs - System.currentTimeMillis()).coerceAtLeast(0L)
-        countdownTimer = object : CountDownTimer(remaining0, 1000) {
-            override fun onTick(r: Long) {
-                dayNum.text = "%02d".format(r / 86400000L)
-                hrNum.text = "%02d".format(r % 86400000L / 3600000L)
-                minNum.text = "%02d".format(r % 3600000L / 60000L)
-                secNum.text = "%02d".format(r % 60000L / 1000L)
-            }
-            override fun onFinish() { dayNum.text = "00"; hrNum.text = "00"; minNum.text = "00"; secNum.text = "00" }
-        }.start()
-
         dialog.setOnDismissListener { countdownTimer?.cancel() }
         dialog.show()
     }
