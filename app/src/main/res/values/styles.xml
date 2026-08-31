@@ -1,17 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="AppTheme" parent="Theme.MaterialComponents.NoActionBar">
-        <item name="android:windowBackground">#0d0d0d</item>
-        <item name="android:statusBarColor">#000000</item>
-        <item name="android:navigationBarColor">#0d0d0d</item>
-        <item name="colorPrimary">#E50914</item>
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:statusBarColor">@color/background</item>
+        <item name="android:navigationBarColor">@color/background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="colorPrimary">@color/accent</item>
         <item name="colorPrimaryDark">#000000</item>
-        <item name="colorAccent">#E50914</item>
+        <item name="colorAccent">@color/accent</item>
     </style>
 
     <style name="PlayerTheme" parent="Theme.MaterialComponents.NoActionBar">
         <item name="android:windowBackground">#000000</item>
         <item name="android:statusBarColor">#000000</item>
         <item name="android:navigationBarColor">#000000</item>
+    </style>
+
+    <style name="Shape.Poster">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">12dp</item>
+    </style>
+
+    <style name="Shape.PosterSmall">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">10dp</item>
+    </style>
+
+    <style name="Text.Title" parent="android:Widget.TextView">
+        <item name="android:textColor">@color/text</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
     </style>
 </resources>

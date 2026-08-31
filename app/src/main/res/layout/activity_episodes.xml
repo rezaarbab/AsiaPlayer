@@ -1,159 +1,308 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#0a0a0a">
+    android:background="@color/background">
 
-    <!-- Backdrop -->
+    <!-- Hero / Backdrop -->
     <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="220dp">
+        android:layout_height="270dp">
 
         <ImageView
             android:id="@+id/backdropImage"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:scaleType="centerCrop"
-            android:background="#1a1a1a" />
+            android:src="@drawable/bg_poster_placeholder" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="90dp"
+            android:background="@drawable/overlay_top" />
 
         <View
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:background="@drawable/gradient_overlay" />
 
-        <!-- Back button -->
-        <TextView
+        <!-- Back -->
+        <FrameLayout
             android:id="@+id/backBtn"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_margin="8dp"
-            android:gravity="center"
-            android:text="&#8592;"
-            android:textColor="#ffffff"
-            android:textSize="22sp"
-            android:background="#44000000" />
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:layout_margin="14dp"
+            android:background="@drawable/bg_circle_btn"
+            android:clickable="true"
+            android:focusable="true">
 
-        <!-- Info over backdrop -->
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_back" />
+        </FrameLayout>
+
+        <!-- Info -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:layout_gravity="bottom"
-            android:padding="12dp">
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="18dp">
 
-            <ImageView
+            <com.google.android.material.imageview.ShapeableImageView
                 android:id="@+id/posterImage"
-                android:layout_width="80dp"
-                android:layout_height="115dp"
+                android:layout_width="92dp"
+                android:layout_height="132dp"
                 android:scaleType="centerCrop"
-                android:background="#222222" />
+                android:src="@drawable/bg_poster_placeholder"
+                app:shapeAppearanceOverlay="@style/Shape.PosterSmall" />
 
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
-                android:paddingStart="10dp"
-                android:gravity="bottom">
+                android:paddingStart="14dp"
+                android:layout_gravity="bottom">
 
                 <TextView
                     android:id="@+id/episodeDramaTitle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textColor="#ffffff"
-                    android:textSize="17sp"
-                    android:textStyle="bold"
+                    android:textColor="@color/text"
+                    android:textSize="20sp"
+                    android:fontFamily="sans-serif-black"
                     android:maxLines="2"
-                    android:shadowColor="#CC000000"
-                    android:shadowRadius="4" />
+                    android:ellipsize="end"
+                    android:lineSpacingExtra="2dp" />
 
                 <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:layout_marginTop="4dp">
+                    android:layout_marginTop="8dp">
 
                     <TextView
                         android:id="@+id/infoStatus"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textColor="#E50914"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
+                        android:background="@drawable/bg_gradient_accent"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="3dp"
+                        android:paddingBottom="3dp"
+                        android:textColor="@color/text"
+                        android:textSize="10sp"
+                        android:fontFamily="sans-serif-medium"
+                        android:textAllCaps="true"
+                        android:letterSpacing="0.08" />
 
                     <TextView
                         android:id="@+id/infoEpisodes"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textColor="#aaaaaa"
-                        android:textSize="11sp"
-                        android:layout_marginStart="8dp" />
+                        android:background="@drawable/bg_chip_dark"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="3dp"
+                        android:paddingBottom="3dp"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="10sp"
+                        android:layout_marginStart="6dp" />
 
                     <TextView
                         android:id="@+id/infoCountry"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textColor="#aaaaaa"
-                        android:textSize="11sp"
-                        android:layout_marginStart="8dp" />
+                        android:background="@drawable/bg_chip_dark"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="3dp"
+                        android:paddingBottom="3dp"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="10sp"
+                        android:layout_marginStart="6dp" />
                 </LinearLayout>
-
-                <TextView
-                    android:id="@+id/infoDesc"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textColor="#cccccc"
-                    android:textSize="11sp"
-                    android:layout_marginTop="6dp"
-                    android:maxLines="2"
-                    android:ellipsize="end"
-                    android:shadowColor="#CC000000"
-                    android:shadowRadius="4" />
             </LinearLayout>
         </LinearLayout>
     </FrameLayout>
 
-    <!-- Episodes label -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Episodes"
-        android:textColor="#ffffff"
-        android:textSize="15sp"
-        android:textStyle="bold"
-        android:paddingStart="16dp"
-        android:paddingTop="12dp"
-        android:paddingBottom="8dp" />
-
-    <ProgressBar
-        android:id="@+id/episodeLoading"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal"
-        android:indeterminateTint="#E50914"
-        android:visibility="gone" />
-
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/episodeRecycler"
+    <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:scrollbars="none">
 
-    <ScrollView
-        android:id="@+id/episodeDebugScroll"
-        android:layout_width="match_parent"
-        android:layout_height="80dp"
-        android:background="#050505">
-        <TextView
-            android:id="@+id/episodeDebugText"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="#00ff88"
-            android:textSize="9sp"
-            android:fontFamily="monospace"
-            android:padding="6dp" />
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/infoDesc"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:lineSpacingExtra="3dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp" />
+
+            <!-- Section header -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="10dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="EPISODES"
+                    android:textColor="@color/text"
+                    android:textSize="15sp"
+                    android:fontFamily="sans-serif-black"
+                    android:letterSpacing="0.1" />
+
+                <TextView
+                    android:id="@+id/episodeCountBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_chip_dark"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
+                    android:textColor="@color/accent"
+                    android:textSize="11sp"
+                    android:fontFamily="sans-serif-medium" />
+            </LinearLayout>
+
+            <!-- Skeleton -->
+            <LinearLayout
+                android:id="@+id/skeletonContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp">
+
+                <include android:id="@+id/skel1" layout="@layout/item_skeleton" />
+                <include android:id="@+id/skel2" layout="@layout/item_skeleton" />
+                <include android:id="@+id/skel3" layout="@layout/item_skeleton" />
+                <include android:id="@+id/skel4" layout="@layout/item_skeleton" />
+                <include android:id="@+id/skel5" layout="@layout/item_skeleton" />
+                <include android:id="@+id/skel6" layout="@layout/item_skeleton" />
+            </LinearLayout>
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/episodeRecycler"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="12dp"
+                android:clipToPadding="false"
+                android:visibility="gone" />
+
+            <!-- Error state -->
+            <LinearLayout
+                android:id="@+id/episodeError"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="32dp"
+                android:visibility="gone">
+
+                <ImageView
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:src="@drawable/ic_error" />
+
+                <TextView
+                    android:id="@+id/episodeErrorText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Couldn't load episodes"
+                    android:textColor="@color/text"
+                    android:textSize="15sp"
+                    android:fontFamily="sans-serif-medium" />
+
+                <TextView
+                    android:id="@+id/episodeRetry"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:layout_marginTop="16dp"
+                    android:gravity="center"
+                    android:paddingStart="28dp"
+                    android:paddingEnd="28dp"
+                    android:text="Try Again"
+                    android:textColor="@color/text"
+                    android:textSize="13sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:background="@drawable/bg_retry" />
+            </LinearLayout>
+        </LinearLayout>
     </ScrollView>
+
+    <!-- Debug console -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="10dp"
+        android:background="@drawable/bg_debug_bar">
+
+        <TextView
+            android:id="@+id/episodeDebugToggle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="&#9654;  DEBUG LOG"
+            android:textColor="@color/green"
+            android:textSize="10sp"
+            android:fontFamily="monospace"
+            android:letterSpacing="0.1" />
+
+        <ScrollView
+            android:id="@+id/episodeDebugScroll"
+            android:layout_width="match_parent"
+            android:layout_height="90dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/episodeDebugText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/green"
+                android:textSize="9sp"
+                android:fontFamily="monospace"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="8dp" />
+        </ScrollView>
+    </LinearLayout>
 
     <WebView
         android:id="@+id/episodeWebView"

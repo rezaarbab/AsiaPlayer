@@ -1,20 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="60dp"
+    android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:paddingStart="16dp"
-    android:paddingEnd="16dp">
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp"
+    android:layout_margin="6dp"
+    android:background="@drawable/bg_episode_card"
+    android:clickable="true"
+    android:focusable="true">
 
     <TextView
         android:id="@+id/epNumber"
-        android:layout_width="36dp"
-        android:layout_height="36dp"
+        android:layout_width="38dp"
+        android:layout_height="38dp"
         android:gravity="center"
-        android:textColor="#E50914"
-        android:textSize="15sp"
-        android:textStyle="bold" />
+        android:textColor="@color/text"
+        android:textSize="14sp"
+        android:fontFamily="sans-serif-black"
+        android:background="@drawable/bg_circle_accent" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -27,23 +34,22 @@
             android:id="@+id/epTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="#ffffff"
+            android:textColor="@color/text"
             android:textSize="13sp"
-            android:textStyle="bold" />
+            android:fontFamily="sans-serif-medium" />
 
         <TextView
             android:id="@+id/epSubStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="11sp"
-            android:layout_marginTop="2dp" />
+            android:textSize="10sp"
+            android:layout_marginTop="3dp" />
     </LinearLayout>
 
-    <TextView
+    <ImageView
+        android:id="@+id/epPlayIcon"
         android:layout_width="20dp"
-        android:layout_height="wrap_content"
-        android:text="&#9654;"
-        android:textColor="#444444"
-        android:textSize="12sp"
-        android:gravity="center" />
+        android:layout_height="20dp"
+        android:src="@drawable/ic_play"
+        android:alpha="0.9" />
 </LinearLayout>

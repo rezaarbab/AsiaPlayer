@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="background">#0f0f1a</color>
-    <color name="accent">#00ff88</color>
-    <color name="text">#ffffff</color>
-    <color name="text_secondary">#888888</color>
-    <color name="card">#1a1a2e</color>
+    <color name="background">#07070C</color>
+    <color name="surface">#12121B</color>
+    <color name="surface_2">#1A1A26</color>
+    <color name="stroke">#232330</color>
+    <color name="accent">#E50914</color>
+    <color name="accent_2">#FF6B00</color>
+    <color name="text">#FFFFFF</color>
+    <color name="text_secondary">#9CA3B0</color>
+    <color name="text_dim">#5A5F6E</color>
+    <color name="green">#22C55E</color>
+    <color name="skeleton">#1C1C28</color>
+    <color name="card">#12121B</color>
 </resources>

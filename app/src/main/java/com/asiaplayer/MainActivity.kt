@@ -5,10 +5,11 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.view.inputmethod.InputMethodManager
 import android.webkit.*
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import okhttp3.*
 import org.json.JSONArray
@@ -25,9 +26,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var recyclerView: RecyclerView
     private lateinit var statusDot: View
     private lateinit var loadingBar: ProgressBar
+    private lateinit var emptyState: View
+    private lateinit var errorState: View
+    private lateinit var errorMessage: TextView
     private lateinit var debugText: TextView
     private lateinit var debugScroll: ScrollView
+    private lateinit var debugToggle: TextView
     private val handler = Handler(Looper.getMainLooper())
+    private var lastQuery = ""
 
     private val customDns = object : okhttp3.Dns {
         override fun lookup(hostname: String): List<InetAddress> {
@@ -72,25 +78,56 @@ class MainActivity : AppCompatActivity() {
         statusDot = findViewById(R.id.statusDot)
         loadingBar = findViewById(R.id.loadingBar)
         recyclerView = findViewById(R.id.recyclerView)
+        emptyState = findViewById(R.id.emptyState)
+        errorState = findViewById(R.id.errorState)
+        errorMessage = findViewById(R.id.errorMessage)
         debugText = findViewById(R.id.debugText)
         debugScroll = findViewById(R.id.debugScroll)
+        debugToggle = findViewById(R.id.debugToggle)
 
-        recyclerView.layoutManager = LinearLayoutManager(this)
+        recyclerView.layoutManager = GridLayoutManager(this, 2)
         WebViewHelper.setup(webView)
 
         log("App started")
         testConnection()
         checkKillSwitch()
 
-        findViewById<Button>(R.id.searchBtn).setOnClickListener {
+        findViewById<TextView>(R.id.searchBtn).setOnClickListener {
             val q = searchInput.text.toString().trim()
-            if (q.isNotEmpty()) searchDrama(q)
+            if (q.isNotEmpty()) {
+                hideKeyboard()
+                searchDrama(q)
+            }
         }
         searchInput.setOnEditorActionListener { _, _, _ ->
             val q = searchInput.text.toString().trim()
-            if (q.isNotEmpty()) searchDrama(q)
+            if (q.isNotEmpty()) {
+                hideKeyboard()
+                searchDrama(q)
+            }
             true
         }
+
+        findViewById<TextView>(R.id.retryBtn).setOnClickListener {
+            if (lastQuery.isNotEmpty()) searchDrama(lastQuery)
+        }
+
+        debugToggle.setOnClickListener {
+            val open = debugScroll.visibility == View.VISIBLE
+            debugScroll.visibility = if (open) View.GONE else View.VISIBLE
+            debugToggle.text = if (open) "\u25B6  DEBUG LOG" else "\u25BC  DEBUG LOG"
+        }
+    }
+
+    private fun hideKeyboard() {
+        (getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)?.hideSoftInputFromWindow(searchInput.windowToken, 0)
+    }
+
+    private fun showState(state: String) {
+        loadingBar.visibility = if (state == "loading") View.VISIBLE else View.GONE
+        recyclerView.visibility = if (state == "list") View.VISIBLE else View.GONE
+        emptyState.visibility = if (state == "empty") View.VISIBLE else View.GONE
+        errorState.visibility = if (state == "error") View.VISIBLE else View.GONE
     }
 
     private fun testConnection() {
@@ -102,8 +139,8 @@ class MainActivity : AppCompatActivity() {
             }
             override fun onResponse(call: Call, response: Response) {
                 log("Connection OK: HTTP ${response.code}")
-                runOnUiThread { statusDot.setBackgroundColor(0xFF00FF88.toInt()) }
                 response.close()
+                runOnUiThread { statusDot.alpha = 1f }
             }
         })
     }
@@ -114,11 +151,11 @@ class MainActivity : AppCompatActivity() {
             override fun onFailure(call: Call, e: IOException) {}
             override fun onResponse(call: Call, response: Response) {
                 val body = response.body?.string() ?: return
+                response.close()
                 try {
                     val json = JSONObject(body)
                     if (!json.optBoolean("active", true)) {
                         runOnUiThread {
-                            statusDot.setBackgroundColor(0xFFFF4444.toInt())
                             setContentView(R.layout.activity_update)
                             findViewById<TextView>(R.id.updateMessage)?.text =
                                 json.optString("message", "Update required")
@@ -130,8 +167,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun searchDrama(query: String) {
-        loadingBar.visibility = View.VISIBLE
-        recyclerView.visibility = View.GONE
+        lastQuery = query
+        showState("loading")
         log("Searching: $query")
 
         val url = "$KISSKH_SEARCH${query.replace(" ", "+")}&type=0"
@@ -144,15 +181,19 @@ class MainActivity : AppCompatActivity() {
             override fun onFailure(call: Call, e: IOException) {
                 log("FAILED: ${e.javaClass.simpleName}: ${e.message}", true)
                 runOnUiThread {
-                    loadingBar.visibility = View.GONE
-                    Toast.makeText(this@MainActivity, "${e.message}", Toast.LENGTH_LONG).show()
+                    showState("error")
+                    errorMessage.text = "Network error. Check your connection."
                 }
             }
             override fun onResponse(call: Call, response: Response) {
                 val body = response.body?.string() ?: ""
+                response.close()
                 log("HTTP ${response.code}, ${body.length}B")
                 if (!response.isSuccessful) {
-                    runOnUiThread { loadingBar.visibility = View.GONE }
+                    runOnUiThread {
+                        showState("error")
+                        errorMessage.text = "Server error (HTTP ${response.code})"
+                    }
                     return
                 }
                 try {
@@ -170,19 +211,31 @@ class MainActivity : AppCompatActivity() {
                         ))
                     }
                     runOnUiThread {
-                        loadingBar.visibility = View.GONE
-                        recyclerView.visibility = View.VISIBLE
-                        recyclerView.adapter = DramaAdapter(items) { drama ->
-                            log("Selected: ${drama.title}")
-                            startActivity(Intent(this@MainActivity, EpisodeActivity::class.java).apply {
-                                putExtra("dramaId", drama.id)
-                                putExtra("dramaTitle", drama.title)
-                            })
+                        if (items.isEmpty()) {
+                            showState("empty")
+                            emptyState.findViewById<TextView>(R.id.emptyTitle)?.text = "No results found"
+                            emptyState.findViewById<TextView>(R.id.emptySubtitle)?.text = "Try a different title"
+                        } else {
+                            showState("list")
+                            recyclerView.adapter = DramaAdapter(items) { drama ->
+                                if (drama.id > 0 && drama.title.isNotEmpty()) {
+                                    log("Selected: ${drama.title}")
+                                    startActivity(Intent(this@MainActivity, EpisodeActivity::class.java).apply {
+                                        putExtra("dramaId", drama.id)
+                                        putExtra("dramaTitle", drama.title)
+                                    })
+                                } else {
+                                    log("Blocked click on invalid item", true)
+                                }
+                            }
                         }
                     }
                 } catch (e: Exception) {
                     log("Parse error: ${e.message}", true)
-                    runOnUiThread { loadingBar.visibility = View.GONE }
+                    runOnUiThread {
+                        showState("error")
+                        errorMessage.text = "Couldn't read server response"
+                    }
                 }
             }
         })

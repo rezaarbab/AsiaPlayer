@@ -25,15 +25,16 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.6'
+          cache-read-only: false
 
       - name: Grant gradlew permission
         run: chmod +x gradlew
 
-      - name: Build Release APK
-        run: ./gradlew assembleRelease
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AsiaPlayer-release
-          path: app/build/outputs/apk/release/*.apk
+          name: AsiaPlayer-APK
+          path: app/build/outputs/apk/debug/*.apk

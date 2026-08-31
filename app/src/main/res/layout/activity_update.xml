@@ -4,32 +4,42 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:gravity="center"
-    android:padding="32dp"
+    android:padding="28dp"
     android:background="@color/background">
 
-    <TextView
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="🔄"
-        android:textSize="64sp"
-        android:layout_marginBottom="16dp" />
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="32dp"
+        android:background="@drawable/bg_update_card">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Update Required"
-        android:textColor="@color/accent"
-        android:textSize="22sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="12dp" />
+        <ImageView
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:src="@drawable/ic_refresh"
+            android:alpha="0.9" />
 
-    <TextView
-        android:id="@+id/updateMessage"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Please update the app to continue."
-        android:textColor="@color/text_secondary"
-        android:textSize="14sp"
-        android:gravity="center" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="Update Required"
+            android:textColor="@color/accent"
+            android:textSize="21sp"
+            android:fontFamily="sans-serif-black"
+            android:letterSpacing="0.05" />
 
+        <TextView
+            android:id="@+id/updateMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="Please update the app to continue."
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:lineSpacingExtra="3dp" />
+    </LinearLayout>
 </LinearLayout>

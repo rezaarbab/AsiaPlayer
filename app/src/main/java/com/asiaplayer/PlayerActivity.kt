@@ -5,7 +5,8 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.webkit.*
-import android.widget.ProgressBar
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.exoplayer2.*
@@ -19,13 +20,22 @@ class PlayerActivity : AppCompatActivity() {
 
     private lateinit var playerView: StyledPlayerView
     private lateinit var subtitleView: TextView
-    private lateinit var loadingView: ProgressBar
-    private lateinit var webView: WebView
+    private lateinit var loadingOverlay: LinearLayout
+    private lateinit var errorOverlay: LinearLayout
+    private lateinit var playerErrorText: TextView
+    private var webView: WebView? = null
     private var player: ExoPlayer? = null
     private val client = OkHttpClient()
     private val handler = Handler(Looper.getMainLooper())
     private val subtitles = mutableListOf<SubtitleEntry>()
     private var subtitleRunnable: Runnable? = null
+    private var timeoutRunnable: Runnable? = null
+
+    private var dramaId = 0
+    private var epId = 0
+    private var subUrl = ""
+    private var kkey = ""
+    private var videoFound = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,31 +43,44 @@ class PlayerActivity : AppCompatActivity() {
 
         playerView = findViewById(R.id.playerView)
         subtitleView = findViewById(R.id.subtitleView)
-        loadingView = findViewById(R.id.loadingView)
+        loadingOverlay = findViewById(R.id.loadingOverlay)
+        errorOverlay = findViewById(R.id.errorOverlay)
+        playerErrorText = findViewById(R.id.playerErrorText)
 
-        val dramaId = intent.getIntExtra("dramaId", 0)
-        val epId = intent.getIntExtra("epId", 0)
-        val subUrl = intent.getStringExtra("subUrl") ?: ""
-        val kkey = intent.getStringExtra("kkey") ?: ""
+        dramaId = intent.getIntExtra("dramaId", 0)
+        epId = intent.getIntExtra("epId", 0)
+        subUrl = intent.getStringExtra("subUrl") ?: ""
+        kkey = intent.getStringExtra("kkey") ?: ""
 
-        loadingView.visibility = View.VISIBLE
+        findViewById<android.view.View>(R.id.playerBack).setOnClickListener { finish() }
+        findViewById<TextView>(R.id.playerRetry).setOnClickListener { startPlayback() }
 
-        // اول زیرنویس لود کن
         if (subUrl.isNotEmpty()) {
             loadSubtitle(subUrl)
         }
 
-        // بعد ویدیو از WebView بگیر
-        setupWebViewForVideo(dramaId, epId, kkey)
+        startPlayback()
     }
 
-    private fun setupWebViewForVideo(dramaId: Int, epId: Int, kkey: String) {
-        webView = WebView(this)
-        WebViewHelper.setup(webView)
+    private fun showPlayerState(state: String) {
+        loadingOverlay.visibility = if (state == "loading") View.VISIBLE else View.GONE
+        errorOverlay.visibility = if (state == "error") View.VISIBLE else View.GONE
+    }
 
-        var videoFound = false
+    private fun startPlayback() {
+        videoFound = false
+        showPlayerState("loading")
 
-        webView.webViewClient = object : WebViewClient() {
+        setupWebViewForVideo()
+    }
+
+    private fun setupWebViewForVideo() {
+        webView?.destroy()
+        val wv = WebView(this)
+        webView = wv
+        WebViewHelper.setup(wv)
+
+        wv.webViewClient = object : WebViewClient() {
             override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: android.net.http.SslError) {
                 handler.proceed()
             }
@@ -65,8 +88,7 @@ class PlayerActivity : AppCompatActivity() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                 val url = request.url.toString()
 
-                // گرفتن m3u8
-                if (!videoFound && (url.contains(".m3u8") || url.contains("index.m3u8")) 
+                if (!videoFound && (url.contains(".m3u8") || url.contains("index.m3u8"))
                     && (url.contains("cdnvideo") || url.contains("streamingcdn") || url.contains("hls"))) {
                     videoFound = true
                     runOnUiThread { setupPlayer(url) }
@@ -76,21 +98,23 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         val pageUrl = "https://kisskh.is/Drama/X/Episode-1?id=$dramaId&ep=$epId&page=0&pageSize=100"
-        webView.loadUrl(pageUrl)
+        wv.loadUrl(pageUrl)
 
-        // timeout — اگه ۳۰ ثانیه ویدیو پیدا نشد
-        handler.postDelayed({
+        timeoutRunnable?.let { handler.removeCallbacks(it) }
+        timeoutRunnable = Runnable {
             if (!videoFound) {
                 runOnUiThread {
-                    loadingView.visibility = View.GONE
-                    subtitleView.text = "Could not load video. Try again."
+                    showPlayerState("error")
+                    playerErrorText.text = "Stream didn't load in time"
                 }
             }
-        }, 30000)
+        }
+        handler.postDelayed(timeoutRunnable!!, 30000)
     }
 
     private fun setupPlayer(videoUrl: String) {
-        loadingView.visibility = View.GONE
+        timeoutRunnable?.let { handler.removeCallbacks(it) }
+        showPlayerState("none")
 
         val headers = mapOf(
             "User-Agent" to "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36",
@@ -112,7 +136,10 @@ class PlayerActivity : AppCompatActivity() {
 
             exo.addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
-                    subtitleView.text = "Playback error: ${error.message}"
+                    runOnUiThread {
+                        showPlayerState("error")
+                        playerErrorText.text = "Playback error"
+                    }
                 }
             })
         }
@@ -130,6 +157,7 @@ class PlayerActivity : AppCompatActivity() {
             override fun onFailure(call: Call, e: IOException) {}
             override fun onResponse(call: Call, response: Response) {
                 val body = response.body?.string() ?: return
+                response.close()
                 parseSrt(body)
             }
         })
@@ -148,7 +176,7 @@ class PlayerActivity : AppCompatActivity() {
                 val end = parseTime(times[1].trim())
                 val timeIndex = lines.indexOfFirst { it.contains("-->") }
                 val text = lines.drop(timeIndex + 1).joinToString("\n")
-                    .replace(Regex("<[^>]*>"), "") // حذف HTML tags
+                    .replace(Regex("<[^>]*>"), "")
                     .trim()
                 if (text.isNotEmpty() && start >= 0) {
                     subtitles.add(SubtitleEntry(start, end, text))
@@ -179,6 +207,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun startSubtitleSync() {
+        subtitleRunnable?.let { handler.removeCallbacks(it) }
         subtitleRunnable = object : Runnable {
             override fun run() {
                 val pos = player?.currentPosition ?: 0L
@@ -203,8 +232,9 @@ class PlayerActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         subtitleRunnable?.let { handler.removeCallbacks(it) }
+        timeoutRunnable?.let { handler.removeCallbacks(it) }
         player?.release()
-        webView.destroy()
+        webView?.destroy()
     }
 }
 

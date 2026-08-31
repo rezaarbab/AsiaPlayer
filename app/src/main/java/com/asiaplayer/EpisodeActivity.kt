@@ -1,9 +1,9 @@
 package com.asiaplayer
 
+import android.animation.ObjectAnimator
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
@@ -12,6 +12,7 @@ import android.os.Looper
 import android.view.View
 import android.webkit.*
 import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -27,11 +28,18 @@ class EpisodeActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var debugText: TextView
     private lateinit var debugScroll: ScrollView
+    private lateinit var debugToggle: TextView
+    private lateinit var recycler: RecyclerView
+    private lateinit var skeleton: LinearLayout
+    private lateinit var errorView: LinearLayout
+    private lateinit var adapter: EpisodeAdapter
     private val client = OkHttpClient()
     private val handler = Handler(Looper.getMainLooper())
     private var dramaId = 0
     private var dramaTitle = ""
     private var isGettingKey = false
+    private var dataLoaded = false
+    private var skeletonAnim: ObjectAnimator? = null
 
     data class SubtitleTrack(val lang: String, val label: String, val src: String)
 
@@ -50,24 +58,68 @@ class EpisodeActivity : AppCompatActivity() {
         dramaTitle = intent.getStringExtra("dramaTitle") ?: ""
         setContentView(R.layout.activity_episodes)
 
-        val recycler = findViewById<RecyclerView>(R.id.episodeRecycler)
-        val loading = findViewById<ProgressBar>(R.id.episodeLoading)
+        recycler = findViewById(R.id.episodeRecycler)
+        skeleton = findViewById(R.id.skeletonContainer)
+        errorView = findViewById(R.id.episodeError)
         debugText = findViewById(R.id.episodeDebugText)
         debugScroll = findViewById(R.id.episodeDebugScroll)
+        debugToggle = findViewById(R.id.episodeDebugToggle)
 
         recycler.layoutManager = LinearLayoutManager(this)
+        adapter = EpisodeAdapter(emptyList()) { ep ->
+            if (!isGettingKey) getKeyAndPlay(ep)
+        }
+        recycler.adapter = adapter
+
         webView = findViewById(R.id.episodeWebView)
         WebViewHelper.setup(webView)
 
-        // دکمه بازگشت
-        findViewById<TextView>(R.id.backBtn).setOnClickListener { finish() }
+        findViewById<View>(R.id.backBtn).setOnClickListener { finish() }
+
+        findViewById<TextView>(R.id.episodeRetry).setOnClickListener { loadEpisodes() }
+
+        debugToggle.setOnClickListener {
+            val open = debugScroll.visibility == View.VISIBLE
+            debugScroll.visibility = if (open) View.GONE else View.VISIBLE
+            debugToggle.text = if (open) "\u25B6  DEBUG LOG" else "\u25BC  DEBUG LOG"
+        }
 
         log("Loading: $dramaTitle")
-        loadEpisodes(recycler, loading)
+        loadEpisodes()
     }
 
-    private fun loadEpisodes(recycler: RecyclerView, loading: ProgressBar) {
-        loading.visibility = View.VISIBLE
+    private fun showEpisodesState(state: String) {
+        skeleton.visibility = if (state == "loading") View.VISIBLE else View.GONE
+        recycler.visibility = if (state == "list") View.VISIBLE else View.GONE
+        errorView.visibility = if (state == "error") View.VISIBLE else View.GONE
+        if (state == "loading") startSkeletonPulse() else stopSkeletonPulse()
+    }
+
+    private fun startSkeletonPulse() {
+        skeletonAnim?.cancel()
+        skeletonAnim = ObjectAnimator.ofFloat(skeleton, "alpha", 1f, 0.35f, 1f).apply {
+            duration = 1100
+            repeatCount = ObjectAnimator.INFINITE
+            start()
+        }
+    }
+
+    private fun stopSkeletonPulse() {
+        skeletonAnim?.cancel()
+        skeletonAnim = null
+        skeleton.alpha = 1f
+    }
+
+    private fun loadEpisodes() {
+        if (dramaId <= 0) {
+            findViewById<TextView>(R.id.episodeErrorText)?.text = "Invalid drama"
+            showEpisodesState("error")
+            return
+        }
+        dataLoaded = false
+        showEpisodesState("loading")
+        recycler.adapter = adapter
+
         val request = Request.Builder()
             .url("https://kisskh.is/api/DramaList/Drama/$dramaId?isq=true")
             .header("User-Agent", "Mozilla/5.0")
@@ -77,10 +129,11 @@ class EpisodeActivity : AppCompatActivity() {
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 log("Failed: ${e.message}", true)
-                runOnUiThread { loading.visibility = View.GONE }
+                runOnUiThread { showEpisodesState("error") }
             }
             override fun onResponse(call: Call, response: Response) {
-                val body = response.body?.string() ?: return
+                val body = response.body?.string() ?: ""
+                response.close()
                 try {
                     val detail = JSONObject(body)
                     val episodes = detail.getJSONArray("episodes")
@@ -99,15 +152,22 @@ class EpisodeActivity : AppCompatActivity() {
 
                     log("${items.size} episodes")
                     runOnUiThread {
-                        loading.visibility = View.GONE
                         setupInfo(thumbnail, status, description, country, items.size)
-                        recycler.adapter = EpisodeAdapter(items) { ep ->
-                            if (!isGettingKey) getKeyAndPlay(ep)
+                        if (items.isEmpty()) {
+                            findViewById<TextView>(R.id.episodeErrorText)?.text = "No episodes available"
+                            showEpisodesState("error")
+                        } else {
+                            dataLoaded = true
+                            adapter = EpisodeAdapter(items) { ep ->
+                                if (!isGettingKey) getKeyAndPlay(ep)
+                            }
+                            recycler.adapter = adapter
+                            showEpisodesState("list")
                         }
                     }
                 } catch (e: Exception) {
                     log("Error: ${e.message}", true)
-                    runOnUiThread { loading.visibility = View.GONE }
+                    runOnUiThread { showEpisodesState("error") }
                 }
             }
         })
@@ -119,34 +179,54 @@ class EpisodeActivity : AppCompatActivity() {
         val epsView = findViewById<TextView>(R.id.infoEpisodes)
         val countryView = findViewById<TextView>(R.id.infoCountry)
         val descView = findViewById<TextView>(R.id.infoDesc)
+        val badge = findViewById<TextView>(R.id.episodeCountBadge)
         val posterView = findViewById<ImageView>(R.id.posterImage)
         val backdropView = findViewById<ImageView>(R.id.backdropImage)
 
         titleView.text = dramaTitle
-        statusView.text = status
-        epsView.text = "$epCount eps"
-        countryView.text = country
-        descView.text = desc
+
+        // قسمت‌هایی که نیومدن، اصلا نشون داده نمیشن (مثل سایت)
+        if (status.isNotEmpty()) {
+            statusView.visibility = View.VISIBLE
+            statusView.text = status
+        } else statusView.visibility = View.GONE
+
+        if (epCount > 0) {
+            epsView.visibility = View.VISIBLE
+            epsView.text = "$epCount EPS"
+            badge.visibility = View.VISIBLE
+            badge.text = epCount.toString()
+        } else {
+            epsView.visibility = View.GONE
+            badge.visibility = View.GONE
+        }
+
+        if (country.isNotEmpty()) {
+            countryView.visibility = View.VISIBLE
+            countryView.text = country
+        } else countryView.visibility = View.GONE
+
+        if (desc.isNotEmpty()) {
+            descView.visibility = View.VISIBLE
+            descView.text = desc
+        } else descView.visibility = View.GONE
 
         if (thumbnail.isNotEmpty()) {
-            val req = Request.Builder().url(thumbnail)
-                .header("User-Agent", "Mozilla/5.0").build()
-            client.newCall(req).enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {}
-                override fun onResponse(call: Call, response: Response) {
-                    val bytes = response.body?.bytes() ?: return
-                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                    runOnUiThread {
-                        posterView.setImageBitmap(bitmap)
-                        backdropView.setImageBitmap(bitmap)
-                    }
+            ImageLoader.load(thumbnail) { bmp ->
+                bmp?.let {
+                    posterView.setImageBitmap(it)
+                    backdropView.setImageBitmap(it)
                 }
-            })
+            }
         }
     }
 
     private fun getKeyAndPlay(ep: EpisodeItem) {
+        if (!dataLoaded || isGettingKey) return
         isGettingKey = true
+        adapter.setLocked(true)
+        adapter.notifyDataSetChanged()
+        Toast.makeText(this, "Preparing episode ${ep.number}...", Toast.LENGTH_SHORT).show()
         log("Getting key ep ${ep.number}")
         val encoded = dramaTitle.replace(" ", "-").replace("(", "").replace(")", "")
         val pageUrl = "https://kisskh.is/Drama/$encoded/Episode-${ep.number}?id=$dramaId&ep=${ep.id}&page=0&pageSize=100"
@@ -169,11 +249,19 @@ class EpisodeActivity : AppCompatActivity() {
         }
         webView.loadUrl(pageUrl)
 
+        // اگه استریم نیومد => کاربر به جای پلیر خراب، خطا + Retry میبینه
         handler.postDelayed({
-            if (!keyFound) {
-                log("Timeout", true)
+            if (!keyFound && isGettingKey) {
                 isGettingKey = false
-                openPlayer(ep, "", "")
+                adapter.setLocked(false)
+                adapter.notifyDataSetChanged()
+                log("Stream key timeout", true)
+                AlertDialog.Builder(this)
+                    .setTitle("Episode ${ep.number}")
+                    .setMessage("Couldn't load this episode. The stream didn't respond.")
+                    .setPositiveButton("Retry") { d, _ -> d.dismiss(); getKeyAndPlay(ep) }
+                    .setNegativeButton("Cancel", null)
+                    .show()
             }
         }, 45000)
     }
@@ -187,10 +275,11 @@ class EpisodeActivity : AppCompatActivity() {
 
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                runOnUiThread { isGettingKey = false; openPlayer(ep, "", kkey) }
+                runOnUiThread { unlock(); openPlayer(ep, "", kkey) }
             }
             override fun onResponse(call: Call, response: Response) {
                 val body = response.body?.string() ?: ""
+                response.close()
                 val tracks = mutableListOf<SubtitleTrack>()
                 try {
                     val subs = JSONArray(body)
@@ -209,9 +298,15 @@ class EpisodeActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     log("Sub error: ${e.message}", true)
                 }
-                runOnUiThread { isGettingKey = false; showDialog(ep, tracks, kkey) }
+                runOnUiThread { unlock(); showDialog(ep, tracks, kkey) }
             }
         })
+    }
+
+    private fun unlock() {
+        isGettingKey = false
+        adapter.setLocked(false)
+        adapter.notifyDataSetChanged()
     }
 
     private fun showDialog(ep: EpisodeItem, tracks: List<SubtitleTrack>, kkey: String) {
@@ -223,7 +318,7 @@ class EpisodeActivity : AppCompatActivity() {
             tracks.forEach { options.add("Download - ${it.label}") }
         }
 
-        android.app.AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle("Episode ${ep.number}")
             .setItems(options.toTypedArray()) { _, which ->
                 when {
@@ -262,6 +357,11 @@ class EpisodeActivity : AppCompatActivity() {
             putExtra("subUrl", subUrl)
             putExtra("kkey", kkey)
         })
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        stopSkeletonPulse()
     }
 }
 

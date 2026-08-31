@@ -1,21 +1,17 @@
 package com.asiaplayer
 
-import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
-import okhttp3.*
-import java.io.IOException
 
 class DramaAdapter(
     private val items: List<DramaItem>,
     private val onClick: (DramaItem) -> Unit
 ) : RecyclerView.Adapter<DramaAdapter.ViewHolder>() {
-
-    private val client = OkHttpClient()
 
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val poster: ImageView = view.findViewById(R.id.dramaPoster)
@@ -31,32 +27,46 @@ class DramaAdapter(
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val item = items[position]
-        holder.title.text = item.title
-        holder.episode.text = "${item.episodeCount} episodes"
-        holder.status.text = item.status
-        holder.poster.setImageBitmap(null)
-        holder.poster.setBackgroundColor(0xFF1A1A1A.toInt())
 
-        // لود پوستر
-        if (item.thumbnailUrl.isNotEmpty()) {
-            val req = Request.Builder().url(item.thumbnailUrl)
-                .header("User-Agent", "Mozilla/5.0").build()
-            client.newCall(req).enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {}
-                override fun onResponse(call: Call, response: Response) {
-                    val bytes = response.body?.bytes() ?: return
-                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                    (holder.itemView.context as? android.app.Activity)?.runOnUiThread {
-                        if (holder.adapterPosition == position) {
-                            holder.poster.setImageBitmap(bitmap)
-                        }
-                    }
-                }
-            })
+        holder.title.text = item.title
+        holder.episode.text = if (item.episodeCount > 0) "${item.episodeCount} episodes" else ""
+
+        // بخش خالی نمایش داده نشه (مثل سایت)
+        if (item.status.isNotEmpty()) {
+            holder.status.visibility = View.VISIBLE
+            holder.status.text = item.status
+            holder.status.background = when (item.status.lowercase()) {
+                "ongoing" -> holder.status.context.getDrawableCompat(R.drawable.bg_gradient_accent)
+                else -> holder.status.context.getDrawableCompat(R.drawable.bg_chip_dark)
+            }
+        } else {
+            holder.status.visibility = View.GONE
         }
 
-        holder.itemView.setOnClickListener { onClick(item) }
+        holder.poster.setImageBitmap(null)
+
+        // پوستر نگیرد => فقط پلیس‌هولدر خوشگل میمونه
+        ImageLoader.load(item.thumbnailUrl) { bmp ->
+            if (holder.adapterPosition == position) {
+                if (bmp != null) {
+                    holder.poster.setImageBitmap(bmp)
+                } else {
+                    holder.poster.setImageBitmap(null)
+                    holder.poster.setBackgroundColor(Color.TRANSPARENT)
+                }
+            }
+        }
+
+        // فقط آیتم معتبر کلیک‌پذیره
+        val valid = item.id > 0 && item.title.isNotEmpty()
+        holder.itemView.isEnabled = valid
+        holder.itemView.isClickable = valid
+        holder.itemView.isFocusable = valid
+        holder.itemView.setOnClickListener { if (valid) onClick(item) }
     }
 
     override fun getItemCount() = items.size
 }
+
+fun android.content.Context.getDrawableCompat(id: Int): android.graphics.drawable.Drawable? =
+    androidx.core.content.ContextCompat.getDrawable(this, id)
