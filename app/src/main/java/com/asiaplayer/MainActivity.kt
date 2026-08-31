@@ -156,17 +156,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun testConnection() {
-        val req = Request.Builder().url("https://${SourceRegistry.host(this)}/api/DramaList/Search?q=test&type=0")
-            .header("User-Agent", "Mozilla/5.0").build()
+        val host = SourceRegistry.host(this)
+        val req = Request.Builder()
+            .url("https://$host/api/DramaList/Search?q=test&type=0")
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36")
+            .header("Referer", "https://$host/")
+            .header("Accept", "application/json, */*")
+            .build()
         client.newCall(req).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 log("Connection FAILED: ${e.javaClass.simpleName}", true)
             }
             override fun onResponse(call: Call, response: Response) {
-                log("Connection OK: HTTP ${response.code}")
-                response.close()
+                val body = response.body?.string() ?: ""; response.close()
+                val ok = response.code in 200..299 && !body.trimStart().startsWith("<!") && !body.trimStart().startsWith("<html")
+                log("$host ${if (ok) "OK" else "HTML/error"}: HTTP ${response.code}")
                 runOnUiThread {
-                    if (screenActive && !isFinishing && !isDestroyed) statusDot.alpha = 1f
+                    if (screenActive && !isFinishing && !isDestroyed) statusDot.alpha = if (ok) 1f else 0.3f
                 }
             }
         })
@@ -199,36 +205,65 @@ class MainActivity : AppCompatActivity() {
         showState("loading")
         log("Searching: $query")
 
-        val url = "https://${SourceRegistry.host(this)}/api/DramaList/Search?q=${Uri.encode(query)}&type=0"
+        // Build candidate host list: selected host first, then rest of its family
+        val selectedHost = SourceRegistry.host(this)
+        val family = SourceRegistry.all.find { s -> s.hosts.contains(selectedHost) } ?: SourceRegistry.all[0]
+        val candidates = (listOf(selectedHost) + family.hosts.filter { it != selectedHost })
+
+        trySearchOnHosts(query, candidates, 0)
+    }
+
+    private fun trySearchOnHosts(query: String, hosts: List<String>, index: Int) {
+        if (index >= hosts.size) {
+            log("All hosts failed for query: $query", true)
+            runOnUiThread {
+                if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
+                showState("error")
+                errorMessage.text = "All sources failed. Try a different source or check your connection."
+            }
+            return
+        }
+
+        val host = hosts[index]
+        val url = "https://$host/api/DramaList/Search?q=${Uri.encode(query)}&type=0"
+        log("Trying $host")
+
         val req = Request.Builder().url(url)
-            .header("User-Agent", "Mozilla/5.0")
-            .header("Referer", "https://kisskh.is/")
-            .header("Accept", "application/json").build()
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36")
+            .header("Referer", "https://$host/")
+            .header("Accept", "application/json, text/plain, */*")
+            .header("X-Requested-With", "XMLHttpRequest")
+            .build()
 
         client.newCall(req).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                log("FAILED: ${e.javaClass.simpleName}: ${e.message}", true)
-                runOnUiThread {
-                    showState("error")
-                    errorMessage.text = "Network error. Check your connection."
-                }
+                log("$host failed: ${e.javaClass.simpleName}", true)
+                trySearchOnHosts(query, hosts, index + 1)
             }
             override fun onResponse(call: Call, response: Response) {
                 val statusCode = response.code
                 val body = response.body?.string() ?: ""
                 response.close()
-                log("HTTP $statusCode, ${body.length}B")
-                if (statusCode !in 200..299) {
-                    runOnUiThread {
-                        if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
-                        showState("error")
-                        errorMessage.text = "Server error (HTTP $statusCode)"
-                    }
+                log("$host HTTP $statusCode, ${body.length}B")
+
+                // HTML response = CF challenge / redirect — skip this host
+                val bodyTrimmed = body.trimStart()
+                if (statusCode !in 200..299 || bodyTrimmed.startsWith("<!") || bodyTrimmed.startsWith("<html")) {
+                    log("$host returned HTML — skipping", true)
+                    trySearchOnHosts(query, hosts, index + 1)
                     return
                 }
+
                 try {
                     val arr = JSONArray(body)
-                    log("${arr.length()} results")
+                    log("${arr.length()} results on $host")
+                    // Save this working host for future requests
+                    SourceRegistry.setHost(this@MainActivity, host)
+                    runOnUiThread {
+                        if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
+                        findViewById<TextView>(R.id.sourceButton)?.text = host.removePrefix("www.").uppercase()
+                    }
+
                     val items = mutableListOf<DramaItem>()
                     for (i in 0 until arr.length()) {
                         val obj = arr.getJSONObject(i)
@@ -255,18 +290,13 @@ class MainActivity : AppCompatActivity() {
                                         putExtra("dramaId", drama.id)
                                         putExtra("dramaTitle", drama.title)
                                     })
-                                } else {
-                                    log("Blocked click on invalid item", true)
                                 }
                             }
                         }
                     }
                 } catch (e: Exception) {
-                    log("Parse error: ${e.message}", true)
-                    runOnUiThread {
-                        showState("error")
-                        errorMessage.text = "Couldn't read server response"
-                    }
+                    log("$host parse error: ${e.message} — skipping", true)
+                    trySearchOnHosts(query, hosts, index + 1)
                 }
             }
         })

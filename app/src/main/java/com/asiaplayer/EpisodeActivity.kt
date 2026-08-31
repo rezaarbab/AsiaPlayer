@@ -125,20 +125,43 @@ class EpisodeActivity : AppCompatActivity() {
         showEpisodesState("loading")
         recycler.adapter = adapter
 
+        val selectedHost = SourceRegistry.host(this)
+        val family = SourceRegistry.all.find { s -> s.hosts.contains(selectedHost) } ?: SourceRegistry.all[0]
+        val candidates = (listOf(selectedHost) + family.hosts.filter { it != selectedHost })
+        tryLoadEpisodesOnHosts(candidates, 0)
+    }
+
+    private fun tryLoadEpisodesOnHosts(hosts: List<String>, index: Int) {
+        if (index >= hosts.size) {
+            log("All hosts failed loading drama $dramaId", true)
+            runOnUiThread { showEpisodesState("error") }
+            return
+        }
+        val host = hosts[index]
+        log("Trying $host for drama $dramaId")
+
         val request = Request.Builder()
-            .url("https://${SourceRegistry.host(this)}/api/DramaList/Drama/$dramaId?isq=true")
-            .header("User-Agent", "Mozilla/5.0")
-            .header("Referer", "https://kisskh.is/")
+            .url("https://$host/api/DramaList/Drama/$dramaId?isq=true")
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36")
+            .header("Referer", "https://$host/")
+            .header("Accept", "application/json, */*")
             .build()
 
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                log("Failed: ${e.message}", true)
-                runOnUiThread { showEpisodesState("error") }
+                log("$host failed: ${e.message}", true)
+                tryLoadEpisodesOnHosts(hosts, index + 1)
             }
             override fun onResponse(call: Call, response: Response) {
                 val body = response.body?.string() ?: ""
                 response.close()
+                val bodyTrimmed = body.trimStart()
+                if (response.code !in 200..299 || bodyTrimmed.startsWith("<!") || bodyTrimmed.startsWith("<html")) {
+                    log("$host returned HTML — skipping", true)
+                    tryLoadEpisodesOnHosts(hosts, index + 1)
+                    return
+                }
+                SourceRegistry.setHost(this@EpisodeActivity, host)
                 try {
                     val detail = JSONObject(body)
                     val episodes = detail.getJSONArray("episodes")
@@ -273,10 +296,11 @@ class EpisodeActivity : AppCompatActivity() {
     }
 
     private fun fetchSubs(ep: EpisodeItem, kkey: String) {
+        val host = SourceRegistry.host(this)
         val request = Request.Builder()
-            .url("https://${SourceRegistry.host(this)}/api/Sub/${ep.id}?kkey=$kkey")
-            .header("User-Agent", "Mozilla/5.0")
-            .header("Referer", "https://kisskh.is/")
+            .url("https://$host/api/Sub/${ep.id}?kkey=$kkey")
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36")
+            .header("Referer", "https://$host/")
             .build()
 
         client.newCall(request).enqueue(object : Callback {

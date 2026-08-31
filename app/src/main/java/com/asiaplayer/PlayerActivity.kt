@@ -25,6 +25,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.session.MediaSession
 import androidx.media3.ui.PlayerView
 import okhttp3.*
 import java.io.IOException
@@ -61,6 +62,7 @@ class PlayerActivity : AppCompatActivity(), GestureOverlayView.Listener {
 
     // ── Player / network ──────────────────────────────────────────────────────
     private var player: ExoPlayer? = null
+    private var mediaSession: MediaSession? = null
     private var webView: WebView? = null
     private val handler = Handler(Looper.getMainLooper())
     private val client = OkHttpClient()
@@ -172,6 +174,8 @@ class PlayerActivity : AppCompatActivity(), GestureOverlayView.Listener {
         savePosition()
         sleepTimer?.cancel()
         handler.removeCallbacksAndMessages(null)
+        mediaSession?.release()
+        mediaSession = null
         player?.release()
         webView?.destroy()
     }
@@ -328,6 +332,12 @@ class PlayerActivity : AppCompatActivity(), GestureOverlayView.Listener {
 
         player = ExoPlayer.Builder(this).build().also { exo ->
             playerView.player = exo
+            // MediaSession — enables lockscreen / notification controls
+            mediaSession?.release()
+            mediaSession = MediaSession.Builder(this, exo)
+                .setId("AsiaPlayerSession")
+                .build()
+            // setMediaSource carries the HLS source; metadata is set separately via MediaItem wrapping
             exo.setMediaSource(mediaSource)
             exo.prepare()
             exo.setPlaybackSpeed(playbackSpeed)
