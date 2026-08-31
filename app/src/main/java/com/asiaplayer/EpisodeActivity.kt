@@ -13,6 +13,7 @@ import android.view.View
 import android.webkit.*
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.Toolbar
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import okhttp3.*
@@ -32,7 +33,6 @@ class EpisodeActivity : AppCompatActivity() {
     private var dramaId = 0
     private var dramaTitle = ""
     private var isGettingKey = false
-    private var currentSubtitles = listOf<SubtitleTrack>()
 
     data class SubtitleTrack(val lang: String, val label: String, val src: String)
 
@@ -51,19 +51,21 @@ class EpisodeActivity : AppCompatActivity() {
         dramaTitle = intent.getStringExtra("dramaTitle") ?: ""
         setContentView(R.layout.activity_episodes)
 
-        val titleView = findViewById<TextView>(R.id.episodeDramaTitle)
+        val toolbar = findViewById<Toolbar>(R.id.toolbar)
+        setSupportActionBar(toolbar)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        toolbar.setNavigationOnClickListener { onBackPressed() }
+
         val recycler = findViewById<RecyclerView>(R.id.episodeRecycler)
         val loading = findViewById<ProgressBar>(R.id.episodeLoading)
         debugText = findViewById(R.id.episodeDebugText)
         debugScroll = findViewById(R.id.episodeDebugScroll)
 
-        titleView.text = dramaTitle
         recycler.layoutManager = LinearLayoutManager(this)
-
         webView = findViewById(R.id.episodeWebView)
         WebViewHelper.setup(webView)
 
-        log("Loading: $dramaTitle (id=$dramaId)")
+        log("Loading: $dramaTitle")
         loadEpisodes(recycler, loading)
     }
 
@@ -77,7 +79,7 @@ class EpisodeActivity : AppCompatActivity() {
 
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                log("FAILED: ${e.message}", true)
+                log("Failed: ${e.message}", true)
                 runOnUiThread { loading.visibility = View.GONE }
             }
             override fun onResponse(call: Call, response: Response) {
@@ -88,6 +90,7 @@ class EpisodeActivity : AppCompatActivity() {
                     val thumbnail = detail.optString("thumbnail", "")
                     val status = detail.optString("status", "")
                     val description = detail.optString("description", "")
+                    val country = detail.optString("country", "")
 
                     val items = mutableListOf<EpisodeItem>()
                     for (i in 0 until episodes.length()) {
@@ -97,12 +100,12 @@ class EpisodeActivity : AppCompatActivity() {
                         items.add(EpisodeItem(ep.getInt("id"), num, ep.optInt("sub", 0) > 0))
                     }
 
-                    log("Found ${items.size} episodes")
+                    log("${items.size} episodes loaded")
                     runOnUiThread {
                         loading.visibility = View.GONE
-                        showInfo(thumbnail, status, description, items.size)
+                        setupInfo(thumbnail, status, description, country, items.size)
                         recycler.adapter = EpisodeAdapter(items) { ep ->
-                            showSubtitleOptions(ep)
+                            if (!isGettingKey) getKeyAndPlay(ep)
                         }
                     }
                 } catch (e: Exception) {
@@ -113,59 +116,57 @@ class EpisodeActivity : AppCompatActivity() {
         })
     }
 
-    private fun showInfo(thumbnail: String, status: String, description: String, epCount: Int) {
-        val infoLayout = findViewById<LinearLayout>(R.id.infoLayout)
-        val posterImage = findViewById<ImageView>(R.id.posterImage)
-        val infoStatus = findViewById<TextView>(R.id.infoStatus)
-        val infoEpisodes = findViewById<TextView>(R.id.infoEpisodes)
-        val infoTitle = findViewById<TextView>(R.id.infoTitle)
-        val infoDesc = findViewById<TextView>(R.id.infoDesc)
+    private fun setupInfo(thumbnail: String, status: String, desc: String, country: String, epCount: Int) {
+        val titleView = findViewById<TextView>(R.id.episodeDramaTitle)
+        val statusView = findViewById<TextView>(R.id.infoStatus)
+        val epsView = findViewById<TextView>(R.id.infoEpisodes)
+        val countryView = findViewById<TextView>(R.id.infoCountry)
+        val descView = findViewById<TextView>(R.id.infoDesc)
+        val posterView = findViewById<android.widget.ImageView>(R.id.posterImage)
+        val backdropView = findViewById<android.widget.ImageView>(R.id.backdropImage)
 
-        infoLayout.visibility = View.VISIBLE
-        infoTitle.text = dramaTitle
-        infoStatus.text = "Status: $status"
-        infoEpisodes.text = "$epCount Episodes"
-        infoDesc.text = description
+        titleView.text = dramaTitle
+        statusView.text = status
+        epsView.text = "$epCount eps"
+        countryView.text = country
+        descView.text = desc
 
         if (thumbnail.isNotEmpty()) {
-            log("Loading poster...")
-            val req = Request.Builder().url(thumbnail).build()
+            val req = Request.Builder().url(thumbnail)
+                .header("User-Agent", "Mozilla/5.0").build()
             client.newCall(req).enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
-                    log("Poster failed: ${e.message}", true)
+                    log("Poster failed", true)
                 }
                 override fun onResponse(call: Call, response: Response) {
                     val bytes = response.body?.bytes() ?: return
                     val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                    runOnUiThread { posterImage.setImageBitmap(bitmap) }
-                    log("Poster loaded!")
+                    runOnUiThread {
+                        posterView.setImageBitmap(bitmap)
+                        backdropView.setImageBitmap(bitmap)
+                    }
+                    log("Poster loaded")
                 }
             })
         }
     }
 
-    private fun showSubtitleOptions(ep: EpisodeItem) {
-        if (isGettingKey) {
-            log("Already loading...", true)
-            return
-        }
+    private fun getKeyAndPlay(ep: EpisodeItem) {
         isGettingKey = true
-        log("Getting key for ep ${ep.number}")
-
-        val encodedTitle = dramaTitle.replace(" ", "-").replace("(", "").replace(")", "")
-        val pageUrl = "https://kisskh.is/Drama/$encodedTitle/Episode-${ep.number}?id=$dramaId&ep=${ep.id}&page=0&pageSize=100"
+        log("Getting key ep ${ep.number}")
+        val encoded = dramaTitle.replace(" ", "-").replace("(", "").replace(")", "")
+        val pageUrl = "https://kisskh.is/Drama/$encoded/Episode-${ep.number}?id=$dramaId&ep=${ep.id}&page=0&pageSize=100"
         var keyFound = false
 
         webView.webViewClient = object : WebViewClient() {
             override fun onReceivedSslError(view: WebView, h: SslErrorHandler, e: android.net.http.SslError) { h.proceed() }
-
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                 val url = request.url.toString()
                 if (!keyFound && url.contains("/api/Sub/${ep.id}") && url.contains("kkey=")) {
                     val kkey = url.substringAfter("kkey=").substringBefore("&").trim()
                     if (kkey.length > 10) {
                         keyFound = true
-                        log("Key found! Fetching subs...")
+                        log("Key found!")
                         fetchSubs(ep, kkey)
                     }
                 }
@@ -176,7 +177,7 @@ class EpisodeActivity : AppCompatActivity() {
 
         handler.postDelayed({
             if (!keyFound) {
-                log("Timeout - opening without subtitle", true)
+                log("Timeout", true)
                 isGettingKey = false
                 openPlayer(ep, "", "")
             }
@@ -192,95 +193,81 @@ class EpisodeActivity : AppCompatActivity() {
 
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                log("Sub fetch failed: ${e.message}", true)
                 runOnUiThread { isGettingKey = false; openPlayer(ep, "", kkey) }
             }
             override fun onResponse(call: Call, response: Response) {
                 val body = response.body?.string() ?: ""
+                val tracks = mutableListOf<SubtitleTrack>()
                 try {
                     val subs = JSONArray(body)
-                    val tracks = mutableListOf<SubtitleTrack>()
+                    log("${subs.length()} subtitle tracks")
                     for (i in 0 until subs.length()) {
                         val sub = subs.getJSONObject(i)
-                        tracks.add(SubtitleTrack(
-                            lang = sub.optString("land", "unknown"),
-                            label = sub.optString("label", "Unknown"),
-                            src = sub.optString("src", "")
-                        ))
-                    }
-                    log("Found ${tracks.size} subtitle tracks")
-                    currentSubtitles = tracks
-
-                    runOnUiThread {
-                        isGettingKey = false
-                        showSubtitleDialog(ep, tracks, kkey)
+                        val src = sub.optString("src", "")
+                        if (src.isNotEmpty()) {
+                            tracks.add(SubtitleTrack(
+                                lang = sub.optString("land", "unknown"),
+                                label = sub.optString("label", "Unknown"),
+                                src = src
+                            ))
+                        }
                     }
                 } catch (e: Exception) {
                     log("Sub parse error: ${e.message}", true)
-                    runOnUiThread { isGettingKey = false; openPlayer(ep, "", kkey) }
                 }
+                runOnUiThread { isGettingKey = false; showDialog(ep, tracks, kkey) }
             }
         })
     }
 
-    private fun showSubtitleDialog(ep: EpisodeItem, tracks: List<SubtitleTrack>, kkey: String) {
+    private fun showDialog(ep: EpisodeItem, tracks: List<SubtitleTrack>, kkey: String) {
         val options = mutableListOf<String>()
-        options.add("▶ Play without subtitle")
-        tracks.forEach { options.add("▶ Play - ${it.label}") }
-        options.add("─────────────")
-        tracks.forEach { options.add("⬇ Download - ${it.label}") }
+        options.add("▶  Play without subtitle")
+        tracks.forEach { options.add("▶  ${it.label}") }
+        if (tracks.isNotEmpty()) {
+            options.add("──────────────")
+            tracks.forEach { options.add("⬇  Download ${it.label}") }
+        }
 
-        android.app.AlertDialog.Builder(this)
+        android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle("Episode ${ep.number}")
             .setItems(options.toTypedArray()) { _, which ->
                 when {
                     which == 0 -> openPlayer(ep, "", kkey)
-                    which in 1..tracks.size -> {
-                        val track = tracks[which - 1]
-                        openPlayer(ep, track.src, kkey)
-                    }
+                    which in 1..tracks.size -> openPlayer(ep, tracks[which - 1].src, kkey)
                     which > tracks.size + 1 -> {
-                        val trackIndex = which - tracks.size - 2
-                        if (trackIndex < tracks.size) {
-                            downloadSubtitle(tracks[trackIndex], ep.number)
-                        }
+                        val i = which - tracks.size - 2
+                        if (i < tracks.size) downloadSub(tracks[i], ep.number)
                     }
                 }
-            }
-            .show()
+            }.show()
     }
 
-    private fun downloadSubtitle(track: SubtitleTrack, epNumber: Int) {
-        val fileName = "${dramaTitle.replace(" ", "_")}_E${epNumber}_${track.lang}.srt"
-        log("Downloading: $fileName")
+    private fun downloadSub(track: SubtitleTrack, epNum: Int) {
+        val fileName = "${dramaTitle.replace(" ", "_")}_E${epNum}_${track.lang}.srt"
         try {
             val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             val req = DownloadManager.Request(Uri.parse(track.src))
-                .setTitle("$dramaTitle - Episode $epNumber - ${track.label}")
-                .setDescription("Subtitle download")
+                .setTitle("$dramaTitle E$epNum - ${track.label}")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
                 .addRequestHeader("User-Agent", "Mozilla/5.0")
             dm.enqueue(req)
             Toast.makeText(this, "Downloading ${track.label}...", Toast.LENGTH_SHORT).show()
-            log("Download started: $fileName")
         } catch (e: Exception) {
-            log("Download failed: ${e.message}", true)
-            Toast.makeText(this, "Download failed: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
     private fun openPlayer(ep: EpisodeItem, subUrl: String, kkey: String) {
-        log("Opening player: sub=${subUrl.isNotEmpty()}")
-        val intent = Intent(this, PlayerActivity::class.java).apply {
+        startActivity(Intent(this, PlayerActivity::class.java).apply {
             putExtra("dramaId", dramaId)
             putExtra("dramaTitle", dramaTitle)
             putExtra("epNumber", ep.number)
             putExtra("epId", ep.id)
             putExtra("subUrl", subUrl)
             putExtra("kkey", kkey)
-        }
-        startActivity(intent)
+        })
     }
 }
 
