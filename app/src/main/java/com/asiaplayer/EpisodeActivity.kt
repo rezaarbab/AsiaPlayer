@@ -10,8 +10,13 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.view.Gravity
+import android.view.WindowManager
 import android.webkit.*
 import android.widget.*
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.app.Dialog
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -310,27 +315,49 @@ class EpisodeActivity : AppCompatActivity() {
     }
 
     private fun showDialog(ep: EpisodeItem, tracks: List<SubtitleTrack>, kkey: String) {
-        val options = mutableListOf<String>()
-        options.add("Play without subtitle")
-        tracks.forEach { options.add("Play - ${it.label}") }
-        if (tracks.isNotEmpty()) {
-            options.add("---")
-            tracks.forEach { options.add("Download - ${it.label}") }
+        val dialog = Dialog(this)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(18), dp(20), dp(12))
+            background = GradientDrawable().apply { setColor(Color.rgb(18, 18, 27)); cornerRadius = dp(22).toFloat() }
         }
-
-        AlertDialog.Builder(this)
-            .setTitle("Episode ${ep.number}")
-            .setItems(options.toTypedArray()) { _, which ->
-                when {
-                    which == 0 -> openPlayer(ep, "", kkey, tracks)
-                    which in 1..tracks.size -> openPlayer(ep, tracks[which - 1].src, kkey, tracks)
-                    which > tracks.size + 1 -> {
-                        val i = which - tracks.size - 2
-                        if (i < tracks.size) downloadSub(tracks[i], ep.number)
-                    }
-                }
-            }.show()
+        root.addView(TextView(this).apply {
+            text = "Episode ${ep.number}  ·  Subtitles"
+            setTextColor(Color.WHITE); textSize = 19f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setPadding(0, 0, 0, dp(12))
+        })
+        val hint = TextView(this).apply {
+            text = if (tracks.isEmpty()) "No online subtitles found" else "Choose a language to start playback"
+            setTextColor(Color.rgb(156, 163, 176)); textSize = 12f
+            setPadding(0, 0, 0, dp(10))
+        }
+        root.addView(hint)
+        root.addView(subtitleRow("OFF", "Play without subtitle", null) { dialog.dismiss(); openPlayer(ep, "", kkey, tracks) })
+        tracks.forEach { track ->
+            root.addView(subtitleRow(track.lang.uppercase(), "Play with ${track.label}", "Download") {
+                dialog.dismiss(); openPlayer(ep, track.src, kkey, tracks)
+            }.also { row ->
+                row.findViewWithTag<TextView>("download")?.setOnClickListener { downloadSub(track, ep.number) }
+            })
+        }
+        dialog.setContentView(root)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92).toInt(), WindowManager.LayoutParams.WRAP_CONTENT)
+        dialog.show()
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92).toInt(), WindowManager.LayoutParams.WRAP_CONTENT)
     }
+
+    private fun subtitleRow(code: String, title: String, action: String?, onPlay: () -> Unit): LinearLayout {
+        val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(7), 0, dp(7)) }
+        val badge = TextView(this).apply { text = code; gravity = Gravity.CENTER; setTextColor(Color.WHITE); textSize = 10f; setTypeface(null, 1); background = GradientDrawable().apply { setColor(Color.rgb(44, 48, 64)); cornerRadius = dp(8).toFloat() }; setPadding(dp(9), dp(7), dp(9), dp(7)) }
+        row.addView(badge)
+        row.addView(TextView(this).apply { text = title; setTextColor(Color.WHITE); textSize = 14f; setPadding(dp(12), 0, dp(8), 0); layoutParams = LinearLayout.LayoutParams(0, -2, 1f); setOnClickListener { onPlay() } })
+        action?.let { row.addView(TextView(this).apply { tag = "download"; text = "↓  $it"; setTextColor(Color.rgb(255, 107, 0)); textSize = 11f; setPadding(dp(8), dp(8), 0, dp(8)) }) }
+        return row
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun downloadSub(track: SubtitleTrack, epNum: Int) {
         val fileName = "${dramaTitle.replace(" ", "_")}_E${epNum}_${track.lang}.srt"
