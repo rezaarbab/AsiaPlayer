@@ -176,12 +176,12 @@ class EpisodeActivity : AppCompatActivity() {
         wvEpDone = false
         wvEpHosts = allHosts
         wvEpHostIndex = allHosts.indexOf(host).coerceAtLeast(0)
-        log("CF-bypass: loading $host for episode $dramaId")
+        log("CF-bypass WebView ep: $host")
 
         android.webkit.CookieManager.getInstance().setAcceptCookie(true)
 
         webView.webViewClient = object : WebViewClient() {
-            private var homepageLoaded = false
+            private var phase = 0
 
             override fun onReceivedSslError(v: WebView, h: SslErrorHandler, e: android.net.http.SslError) { h.proceed() }
 
@@ -189,64 +189,42 @@ class EpisodeActivity : AppCompatActivity() {
                 if (wvEpDone) return
                 if (url.contains("/cdn-cgi/") || url.contains("challenge-")) return
 
-                if (!homepageLoaded && url.contains(host)) {
-                    homepageLoaded = true
-                    log("$host homepage ready — stealing cookie in 2s")
-                    handler.postDelayed({
-                        if (wvEpDone) return@postDelayed
-                        val cookies = android.webkit.CookieManager.getInstance()
-                            .getCookie("https://$host/") ?: ""
-                        log("Cookies: ${if (cookies.isEmpty()) "NONE" else cookies.take(80)}")
-                        tryEpApiWithCookies(host, cookies)
-                    }, 2_000L)
-                }
-            }
+                when {
+                    phase == 0 && url.contains(host) -> {
+                        phase = 1
+                        val apiUrl = "https://$host/api/DramaList/Drama/$dramaId?isq=true"
+                        log("Phase 1: navigating to drama API")
+                        handler.postDelayed({ view.loadUrl(apiUrl) }, 500L)
+                    }
+                    phase == 1 && url.contains("/api/DramaList/Drama/") -> {
+                        log("Phase 2: reading drama API response")
+                        view.evaluateJavascript(
+                            "(function(){ return document.body.textContent || document.body.innerText; })()"
+                        ) { raw ->
+                            if (wvEpDone) return@evaluateJavascript
+                            val json = try {
+                                org.json.JSONTokener(raw).nextValue().toString()
+                            } catch (_: Exception) { raw.trim().removeSurrounding("\"") }
 
-            override fun shouldInterceptRequest(view: WebView, request: android.webkit.WebResourceRequest): WebResourceResponse? {
-                val reqUrl = request.url.toString()
-                if (!wvEpDone && reqUrl.contains("/api/DramaList/Drama/$dramaId")) {
-                    val cookies = android.webkit.CookieManager.getInstance()
-                        .getCookie("https://$host/") ?: ""
-                    Thread { tryEpApiWithCookies(host, cookies, reqUrl) }.start()
+                            val trimmed = json.trimStart()
+                            if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+                                wvEpDone = true
+                                SourceRegistry.setHost(this@EpisodeActivity, host)
+                                parseAndShowEpisodes(json, host)
+                            } else {
+                                log("$host ep API returned HTML — next", true)
+                                runOnUiThread { tryNextWebViewEpHost() }
+                            }
+                        }
+                    }
                 }
-                return null
             }
         }
-        webView.loadUrl("https://$host/")
 
+        webView.loadUrl("https://$host/")
         handler.postDelayed({
             if (!wvEpDone) { log("$host timeout (40s)", true); runOnUiThread { tryNextWebViewEpHost() } }
         }, 40_000L)
-    }
-
-    private fun tryEpApiWithCookies(host: String, cookies: String, overrideUrl: String? = null) {
-        if (wvEpDone) return
-        val url = overrideUrl ?: "https://$host/api/DramaList/Drama/$dramaId?isq=true"
-        val req = okhttp3.Request.Builder().url(url)
-            .header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36")
-            .header("Accept", "application/json, */*")
-            .header("Referer", "https://$host/")
-            .header("X-Requested-With", "XMLHttpRequest")
-            .apply { if (cookies.isNotEmpty()) header("Cookie", cookies) }
-            .build()
-
-        client.newCall(req).enqueue(object : okhttp3.Callback {
-            override fun onFailure(call: okhttp3.Call, e: IOException) {
-                log("Cookie-API $host failed: ${e.message}", true)
-            }
-            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
-                val body = response.body?.string() ?: ""; response.close()
-                val trimmed = body.trimStart()
-                log("Cookie-API $host ${response.code} ${body.length}B — ${trimmed.take(30)}")
-                if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-                    wvEpDone = true
-                    SourceRegistry.setHost(this@EpisodeActivity, host)
-                    parseAndShowEpisodes(body, host)
-                } else {
-                    log("$host still HTML with cookies", true)
-                }
-            }
-        })
     }
 
     private fun tryNextWebViewEpHost() {

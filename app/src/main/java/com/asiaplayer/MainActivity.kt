@@ -314,146 +314,101 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    // ── WebView CF bypass — Cookie-steal strategy ────────────────────────────
-    // CF blocks direct HTTP and even injected fetch(). The fix:
-    //  1. Load homepage in WebView → CF challenge runs → cf_clearance cookie is set
-    //  2. Read that cookie via CookieManager (it's IP-bound, works on same device)
-    //  3. Make a normal OkHttp request WITH the stolen cookie → CF allows it
-    //  4. If that also fails, try navigating to the search results page and
-    //     intercept the page's own API call via shouldInterceptRequest
+    // ── WebView CF bypass — Direct URL navigation strategy ───────────────────
+    // OkHttp is blocked by CF's TLS fingerprint check (JA3/JA4).
+    // Solution: let the WebView navigate directly to the API URL.
+    // WebView uses Chrome's TLS stack + CF cookies → CF allows the request.
+    // We read the JSON response from document.body.textContent.
 
     private var wvSearchQuery = ""
     private var wvSearchHosts = listOf<String>()
     private var wvSearchHostIndex = 0
     private var wvSearchDone = false
-    private var wvCurrentHost = ""
 
     private fun searchViaWebView(query: String, host: String, allHosts: List<String>) {
         wvSearchQuery = query
         wvSearchHosts = allHosts
         wvSearchHostIndex = allHosts.indexOf(host).coerceAtLeast(0)
         wvSearchDone = false
-        wvCurrentHost = host
-        log("CF-bypass: loading $host homepage to get cf_clearance")
+        log("CF-bypass WebView: $host")
+
+        android.webkit.CookieManager.getInstance().setAcceptCookie(true)
 
         webView.webViewClient = object : WebViewClient() {
-            private var homepageLoaded = false
+            // phase 0 = loading homepage (CF challenge)
+            // phase 1 = loading API URL
+            private var phase = 0
 
             override fun onReceivedSslError(v: WebView, h: SslErrorHandler, e: android.net.http.SslError) { h.proceed() }
 
             override fun onPageFinished(view: WebView, url: String) {
                 if (wvSearchDone) return
-                // CF challenge pages have /cdn-cgi/ in the URL — wait for them
                 if (url.contains("/cdn-cgi/") || url.contains("challenge-")) return
 
-                if (!homepageLoaded && url.contains(host)) {
-                    homepageLoaded = true
-                    // Homepage loaded — CF cookie should now be set.
-                    // Wait 2s for any async CF validation, then steal cookie & call API
-                    log("Homepage loaded, stealing cookie in 2s")
-                    handler.postDelayed({
-                        if (wvSearchDone) return@postDelayed
-                        val cookies = android.webkit.CookieManager.getInstance()
-                            .getCookie("https://$host/") ?: ""
-                        log("Cookies: ${if (cookies.isEmpty()) "NONE" else cookies.take(80) + "..."}")
-                        if (cookies.contains("cf_clearance")) {
-                            tryApiWithCookies(query, host, cookies)
-                        } else {
-                            // No cf_clearance yet — navigate to search page,
-                            // let the page's own JS call the API and intercept it
-                            log("No cf_clearance — trying search page intercept")
-                            view.loadUrl("https://$host/?s=${Uri.encode(query)}")
-                        }
-                    }, 2_000L)
-                } else if (homepageLoaded && url.contains(host)) {
-                    // Search page loaded — try cookie again (should have clearance now)
-                    val cookies = android.webkit.CookieManager.getInstance()
-                        .getCookie("https://$host/") ?: ""
-                    if (!wvSearchDone) tryApiWithCookies(query, host, cookies)
-                }
-            }
+                when {
+                    phase == 0 && url.contains(host) -> {
+                        phase = 1
+                        // Homepage loaded with CF cookies — now navigate to the API URL.
+                        // WebView carries its cookies + Chrome TLS fingerprint → CF accepts it.
+                        val apiUrl = "https://$host/api/DramaList/Search?q=${Uri.encode(query)}&type=0"
+                        log("Phase 1: navigating to API URL")
+                        handler.postDelayed({ view.loadUrl(apiUrl) }, 500L)
+                    }
+                    phase == 1 && url.contains("/api/DramaList/Search") -> {
+                        // Read the raw JSON the browser is displaying
+                        log("Phase 2: reading API response from page")
+                        view.evaluateJavascript(
+                            "(function(){ return document.body.textContent || document.body.innerText; })()"
+                        ) { raw ->
+                            if (wvSearchDone) return@evaluateJavascript
+                            val json = try {
+                                // evaluateJavascript returns a JS-quoted string — decode it
+                                org.json.JSONTokener(raw).nextValue().toString()
+                            } catch (_: Exception) { raw.trim().removeSurrounding("\"") }
 
-            override fun shouldInterceptRequest(
-                view: WebView,
-                request: android.webkit.WebResourceRequest
-            ): WebResourceResponse? {
-                val reqUrl = request.url.toString()
-                // If the page's own JS calls the Search API, capture the CF cookies at that moment
-                if (!wvSearchDone && reqUrl.contains("/api/DramaList/Search")) {
-                    val cookies = android.webkit.CookieManager.getInstance()
-                        .getCookie("https://$host/") ?: ""
-                    log("shouldIntercept search call — retrying with cookies")
-                    Thread { tryApiWithCookies(query, host, cookies, reqUrl) }.start()
+                            val trimmed = json.trimStart()
+                            log("API page content: ${trimmed.take(60)}")
+                            if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+                                wvSearchDone = true
+                                try {
+                                    val arr = if (trimmed.startsWith("[")) JSONArray(json)
+                                              else JSONArray().also { it.put(JSONObject(json)) }
+                                    log("✓ ${arr.length()} results on $host")
+                                    SourceRegistry.setHost(this@MainActivity, host)
+                                    runOnUiThread {
+                                        if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
+                                        findViewById<TextView>(R.id.sourceButton)?.text =
+                                            host.removePrefix("www.").uppercase()
+                                    }
+                                    showResults(query, arr)
+                                } catch (e: Exception) {
+                                    log("Parse error: ${e.message}", true)
+                                    runOnUiThread { tryNextWebViewHost() }
+                                }
+                            } else {
+                                log("$host API returned HTML — next host", true)
+                                runOnUiThread { tryNextWebViewHost() }
+                            }
+                        }
+                    }
                 }
-                return null
             }
         }
 
-        android.webkit.CookieManager.getInstance().setAcceptCookie(true)
         webView.loadUrl("https://$host/")
 
         handler.postDelayed({
             if (!wvSearchDone) {
-                log("WebView $host timeout (40s)", true)
+                log("$host timeout (40s)", true)
                 runOnUiThread { tryNextWebViewHost() }
             }
         }, 40_000L)
     }
 
-    private fun tryApiWithCookies(
-        query: String,
-        host: String,
-        cookies: String,
-        overrideUrl: String? = null
-    ) {
-        if (wvSearchDone) return
-        val url = overrideUrl
-            ?: "https://$host/api/DramaList/Search?q=${Uri.encode(query)}&type=0"
-        log("Trying API with cookies for $host")
-
-        val req = Request.Builder().url(url)
-            .header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36")
-            .header("Accept", "application/json, text/plain, */*")
-            .header("Referer", "https://$host/")
-            .header("X-Requested-With", "XMLHttpRequest")
-            .apply { if (cookies.isNotEmpty()) header("Cookie", cookies) }
-            .build()
-
-        client.newCall(req).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                log("Cookie-API $host failed: ${e.message}", true)
-            }
-            override fun onResponse(call: Call, response: Response) {
-                val body = response.body?.string() ?: ""; response.close()
-                val trimmed = body.trimStart()
-                log("Cookie-API $host ${response.code} ${body.length}B — ${trimmed.take(30)}")
-                if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
-                    wvSearchDone = true
-                    try {
-                        val arr = if (trimmed.startsWith("[")) JSONArray(body)
-                                  else JSONArray().also { it.put(JSONObject(body)) }
-                        log("✓ ${arr.length()} results via cookie-steal on $host")
-                        SourceRegistry.setHost(this@MainActivity, host)
-                        runOnUiThread {
-                            if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
-                            findViewById<TextView>(R.id.sourceButton)?.text =
-                                host.removePrefix("www.").uppercase()
-                        }
-                        showResults(query, arr)
-                    } catch (e: Exception) {
-                        log("Parse error: ${e.message}", true)
-                    }
-                } else {
-                    log("Still HTML with cookies — CF too strict on $host", true)
-                }
-            }
-        })
-    }
-
     private fun tryNextWebViewHost() {
         if (wvSearchDone) return
         wvSearchHostIndex++
-        if (wvSearchHostIndex >= minOf(wvSearchHosts.size, 3)) {
+        if (wvSearchHostIndex >= minOf(wvSearchHosts.size, 4)) {
             log("All CF-bypass attempts exhausted", true)
             if (!screenActive || isFinishing || isDestroyed) return
             showState("error")
