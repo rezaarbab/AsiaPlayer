@@ -1,6 +1,7 @@
 package com.asiaplayer
 
 import android.os.Bundle
+import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -8,6 +9,8 @@ import android.webkit.*
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.exoplayer2.*
 import com.google.android.exoplayer2.source.hls.HlsMediaSource
@@ -36,6 +39,9 @@ class PlayerActivity : AppCompatActivity() {
     private var subUrl = ""
     private var kkey = ""
     private var videoFound = false
+    private val subtitleLabels = mutableListOf("Off")
+    private val subtitleUrls = mutableListOf("")
+    private val pickSubtitle = 7001
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,15 +57,51 @@ class PlayerActivity : AppCompatActivity() {
         epId = intent.getIntExtra("epId", 0)
         subUrl = intent.getStringExtra("subUrl") ?: ""
         kkey = intent.getStringExtra("kkey") ?: ""
+        intent.getStringArrayListExtra("subtitleLabels")?.let {
+            subtitleLabels.clear(); subtitleLabels.add("Off"); subtitleLabels.addAll(it)
+        }
+        intent.getStringArrayListExtra("subtitleUrls")?.let {
+            subtitleUrls.clear(); subtitleUrls.add(""); subtitleUrls.addAll(it)
+        }
 
         findViewById<android.view.View>(R.id.playerBack).setOnClickListener { finish() }
         findViewById<TextView>(R.id.playerRetry).setOnClickListener { startPlayback() }
+        findViewById<TextView>(R.id.subtitleMenu).setOnClickListener { showSubtitleMenu() }
 
         if (subUrl.isNotEmpty()) {
             loadSubtitle(subUrl)
         }
 
         startPlayback()
+    }
+
+    private fun showSubtitleMenu() {
+        val options = subtitleLabels.toMutableList().apply { add("Add subtitle file…") }
+        AlertDialog.Builder(this).setTitle("Subtitles")
+            .setItems(options.toTypedArray()) { _, which ->
+                if (which == options.lastIndex) {
+                    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        type = "text/*"
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                    }, pickSubtitle)
+                } else {
+                    val url = subtitleUrls.getOrNull(which).orEmpty()
+                    subtitles.clear()
+                    if (url.isNotEmpty()) loadSubtitle(url)
+                    subtitleView.text = ""
+                }
+            }.show()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != pickSubtitle || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        try {
+            contentResolver.openInputStream(uri)?.bufferedReader()?.use { parseSrt(it.readText()) }
+        } catch (_: Exception) {
+            Toast.makeText(this, "Could not read subtitle file", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun showPlayerState(state: String) {

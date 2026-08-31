@@ -322,8 +322,8 @@ class EpisodeActivity : AppCompatActivity() {
             .setTitle("Episode ${ep.number}")
             .setItems(options.toTypedArray()) { _, which ->
                 when {
-                    which == 0 -> openPlayer(ep, "", kkey)
-                    which in 1..tracks.size -> openPlayer(ep, tracks[which - 1].src, kkey)
+                    which == 0 -> openPlayer(ep, "", kkey, tracks)
+                    which in 1..tracks.size -> openPlayer(ep, tracks[which - 1].src, kkey, tracks)
                     which > tracks.size + 1 -> {
                         val i = which - tracks.size - 2
                         if (i < tracks.size) downloadSub(tracks[i], ep.number)
@@ -348,7 +348,7 @@ class EpisodeActivity : AppCompatActivity() {
         }
     }
 
-    private fun openPlayer(ep: EpisodeItem, subUrl: String, kkey: String) {
+    private fun openPlayer(ep: EpisodeItem, subUrl: String, kkey: String, tracks: List<SubtitleTrack> = emptyList()) {
         startActivity(Intent(this, PlayerActivity::class.java).apply {
             putExtra("dramaId", dramaId)
             putExtra("dramaTitle", dramaTitle)
@@ -356,6 +356,8 @@ class EpisodeActivity : AppCompatActivity() {
             putExtra("epId", ep.id)
             putExtra("subUrl", subUrl)
             putExtra("kkey", kkey)
+            putStringArrayListExtra("subtitleLabels", ArrayList(tracks.map { it.label }))
+            putStringArrayListExtra("subtitleUrls", ArrayList(tracks.map { it.src }))
         })
     }
 

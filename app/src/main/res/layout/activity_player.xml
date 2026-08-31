@@ -26,6 +26,23 @@
             android:src="@drawable/ic_back" />
     </FrameLayout>
 
+    <TextView
+        android:id="@+id/subtitleMenu"
+        android:layout_width="wrap_content"
+        android:layout_height="40dp"
+        android:layout_alignParentEnd="true"
+        android:layout_margin="16dp"
+        android:gravity="center"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:text="CC  Subtitle"
+        android:textColor="@color/text"
+        android:textSize="12sp"
+        android:fontFamily="sans-serif-medium"
+        android:background="@drawable/bg_circle_btn"
+        android:clickable="true"
+        android:focusable="true" />
+
     <!-- Subtitle overlay -->
     <TextView
         android:id="@+id/subtitleView"

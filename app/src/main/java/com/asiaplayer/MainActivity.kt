@@ -1,6 +1,7 @@
 package com.asiaplayer
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -34,6 +35,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var debugToggle: TextView
     private val handler = Handler(Looper.getMainLooper())
     private var lastQuery = ""
+    private var screenActive = true
 
     private val customDns = object : okhttp3.Dns {
         override fun lookup(hostname: String): List<InetAddress> {
@@ -64,9 +66,17 @@ class MainActivity : AppCompatActivity() {
         val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
         val line = "[$time] ${if (isError) "X" else "OK"} $msg\n"
         handler.post {
+            if (!screenActive || isFinishing || isDestroyed) return@post
             debugText.append(line)
             debugScroll.post { debugScroll.fullScroll(ScrollView.FOCUS_DOWN) }
         }
+    }
+
+    override fun onDestroy() {
+        screenActive = false
+        client.dispatcher.cancelAll()
+        handler.removeCallbacksAndMessages(null)
+        super.onDestroy()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -140,7 +150,9 @@ class MainActivity : AppCompatActivity() {
             override fun onResponse(call: Call, response: Response) {
                 log("Connection OK: HTTP ${response.code}")
                 response.close()
-                runOnUiThread { statusDot.alpha = 1f }
+                runOnUiThread {
+                    if (screenActive && !isFinishing && !isDestroyed) statusDot.alpha = 1f
+                }
             }
         })
     }
@@ -156,6 +168,7 @@ class MainActivity : AppCompatActivity() {
                     val json = JSONObject(body)
                     if (!json.optBoolean("active", true)) {
                         runOnUiThread {
+                            if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
                             setContentView(R.layout.activity_update)
                             findViewById<TextView>(R.id.updateMessage)?.text =
                                 json.optString("message", "Update required")
@@ -171,7 +184,7 @@ class MainActivity : AppCompatActivity() {
         showState("loading")
         log("Searching: $query")
 
-        val url = "$KISSKH_SEARCH${query.replace(" ", "+")}&type=0"
+        val url = "$KISSKH_SEARCH${Uri.encode(query)}&type=0"
         val req = Request.Builder().url(url)
             .header("User-Agent", "Mozilla/5.0")
             .header("Referer", "https://kisskh.is/")
@@ -186,13 +199,15 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             override fun onResponse(call: Call, response: Response) {
+                val statusCode = response.code
                 val body = response.body?.string() ?: ""
                 response.close()
-                log("HTTP ${response.code}, ${body.length}B")
-                if (!response.isSuccessful) {
+                log("HTTP $statusCode, ${body.length}B")
+                if (statusCode !in 200..299) {
                     runOnUiThread {
+                        if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
                         showState("error")
-                        errorMessage.text = "Server error (HTTP ${response.code})"
+                        errorMessage.text = "Server error (HTTP $statusCode)"
                     }
                     return
                 }
@@ -211,6 +226,7 @@ class MainActivity : AppCompatActivity() {
                         ))
                     }
                     runOnUiThread {
+                        if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
                         if (items.isEmpty()) {
                             showState("empty")
                             emptyState.findViewById<TextView>(R.id.emptyTitle)?.text = "No results found"
