@@ -215,11 +215,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun trySearchOnHosts(query: String, hosts: List<String>, index: Int) {
         if (index >= hosts.size) {
-            log("All hosts failed for query: $query", true)
+            // All direct requests failed — fall back to WebView (bypasses Cloudflare JS challenge)
+            log("Direct requests failed — trying WebView fallback", true)
+            val selectedHost = SourceRegistry.host(this)
+            val family = SourceRegistry.all.find { s -> s.hosts.contains(selectedHost) } ?: SourceRegistry.all[0]
             runOnUiThread {
                 if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
-                showState("error")
-                errorMessage.text = "All sources failed. Try a different source or check your connection."
+                searchViaWebView(query, family.hosts[0], family.hosts)
             }
             return
         }
@@ -246,7 +248,6 @@ class MainActivity : AppCompatActivity() {
                 response.close()
                 log("$host HTTP $statusCode, ${body.length}B")
 
-                // HTML response = CF challenge / redirect — skip this host
                 val bodyTrimmed = body.trimStart()
                 if (statusCode !in 200..299 || bodyTrimmed.startsWith("<!") || bodyTrimmed.startsWith("<html")) {
                     log("$host returned HTML — skipping", true)
@@ -257,49 +258,139 @@ class MainActivity : AppCompatActivity() {
                 try {
                     val arr = JSONArray(body)
                     log("${arr.length()} results on $host")
-                    // Save this working host for future requests
                     SourceRegistry.setHost(this@MainActivity, host)
                     runOnUiThread {
                         if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
                         findViewById<TextView>(R.id.sourceButton)?.text = host.removePrefix("www.").uppercase()
                     }
-
-                    val items = mutableListOf<DramaItem>()
-                    for (i in 0 until arr.length()) {
-                        val obj = arr.getJSONObject(i)
-                        items.add(DramaItem(
-                            id = obj.getInt("id"),
-                            title = obj.getString("title"),
-                            episodeCount = obj.optInt("episodesCount", 0),
-                            status = obj.optString("status", ""),
-                            thumbnailUrl = obj.optString("thumbnail", "")
-                        ))
-                    }
-                    runOnUiThread {
-                        if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
-                        if (items.isEmpty()) {
-                            showState("empty")
-                            emptyState.findViewById<TextView>(R.id.emptyTitle)?.text = "No results found"
-                            emptyState.findViewById<TextView>(R.id.emptySubtitle)?.text = "Try a different title"
-                        } else {
-                            showState("list")
-                            recyclerView.adapter = DramaAdapter(items) { drama ->
-                                if (drama.id > 0 && drama.title.isNotEmpty()) {
-                                    log("Selected: ${drama.title}")
-                                    startActivity(Intent(this@MainActivity, EpisodeActivity::class.java).apply {
-                                        putExtra("dramaId", drama.id)
-                                        putExtra("dramaTitle", drama.title)
-                                    })
-                                }
-                            }
-                        }
-                    }
+                    showResults(query, arr)
                 } catch (e: Exception) {
                     log("$host parse error: ${e.message} — skipping", true)
                     trySearchOnHosts(query, hosts, index + 1)
                 }
             }
         })
+    }
+
+    // WebView-based search: loads the site (lets Cloudflare JS challenge run),
+    // then calls the API via fetch() injected into the page context.
+    private var wvSearchQuery = ""
+    private var wvSearchHosts = listOf<String>()
+    private var wvSearchHostIndex = 0
+    private var wvSearchDone = false
+
+    private fun searchViaWebView(query: String, host: String, allHosts: List<String>) {
+        wvSearchQuery = query
+        wvSearchHosts = allHosts
+        wvSearchHostIndex = allHosts.indexOf(host).coerceAtLeast(0)
+        wvSearchDone = false
+        log("WebView trying $host")
+
+        webView.addJavascriptInterface(object {
+            @android.webkit.JavascriptInterface
+            fun onResult(json: String) {
+                if (wvSearchDone) return
+                val trimmed = json.trimStart()
+                if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+                    wvSearchDone = true
+                    try {
+                        val arr = if (trimmed.startsWith("[")) JSONArray(json) else JSONArray().also { it.put(JSONObject(json)) }
+                        log("WebView got ${arr.length()} results on $host")
+                        SourceRegistry.setHost(this@MainActivity, host)
+                        runOnUiThread {
+                            if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
+                            findViewById<TextView>(R.id.sourceButton)?.text = host.removePrefix("www.").uppercase()
+                        }
+                        showResults(query, arr)
+                    } catch (e: Exception) {
+                        log("WebView parse error: ${e.message}", true)
+                        tryNextWebViewHost()
+                    }
+                } else {
+                    log("WebView $host returned non-JSON", true)
+                    tryNextWebViewHost()
+                }
+            }
+        }, "AsiaPlayerBridge")
+
+        webView.webViewClient = object : WebViewClient() {
+            override fun onReceivedSslError(v: WebView, h: SslErrorHandler, e: android.net.http.SslError) { h.proceed() }
+            override fun onPageFinished(view: WebView, url: String) {
+                if (wvSearchDone) return
+                // Inject fetch call after page (and CF challenge) has finished loading
+                val encodedQ = Uri.encode(query)
+                view.evaluateJavascript("""
+                    (function(){
+                        fetch('/api/DramaList/Search?q=$encodedQ&type=0', {
+                            headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}
+                        })
+                        .then(function(r){ return r.text(); })
+                        .then(function(t){ AsiaPlayerBridge.onResult(t); })
+                        .catch(function(e){ AsiaPlayerBridge.onResult('ERR:'+e.message); });
+                    })();
+                """.trimIndent(), null)
+            }
+        }
+        webView.loadUrl("https://$host/")
+
+        // Timeout: if no result in 20s, try next host
+        handler.postDelayed({
+            if (!wvSearchDone) {
+                log("WebView $host timeout", true)
+                tryNextWebViewHost()
+            }
+        }, 20_000L)
+    }
+
+    private fun tryNextWebViewHost() {
+        wvSearchHostIndex++
+        if (wvSearchHostIndex >= wvSearchHosts.size) {
+            log("All WebView hosts failed", true)
+            runOnUiThread {
+                if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
+                showState("error")
+                errorMessage.text = "All sources failed. Try selecting a different source."
+            }
+            return
+        }
+        val nextHost = wvSearchHosts[wvSearchHostIndex]
+        runOnUiThread {
+            if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
+            searchViaWebView(wvSearchQuery, nextHost, wvSearchHosts)
+        }
+    }
+
+    private fun showResults(query: String, arr: JSONArray) {
+        val items = mutableListOf<DramaItem>()
+        for (i in 0 until arr.length()) {
+            val obj = arr.getJSONObject(i)
+            items.add(DramaItem(
+                id = obj.getInt("id"),
+                title = obj.getString("title"),
+                episodeCount = obj.optInt("episodesCount", 0),
+                status = obj.optString("status", ""),
+                thumbnailUrl = obj.optString("thumbnail", "")
+            ))
+        }
+        runOnUiThread {
+            if (!screenActive || isFinishing || isDestroyed) return@runOnUiThread
+            if (items.isEmpty()) {
+                showState("empty")
+                emptyState.findViewById<TextView>(R.id.emptyTitle)?.text = "No results found"
+                emptyState.findViewById<TextView>(R.id.emptySubtitle)?.text = "Try a different title"
+            } else {
+                showState("list")
+                recyclerView.adapter = DramaAdapter(items) { drama ->
+                    if (drama.id > 0 && drama.title.isNotEmpty()) {
+                        log("Selected: ${drama.title}")
+                        startActivity(Intent(this@MainActivity, EpisodeActivity::class.java).apply {
+                            putExtra("dramaId", drama.id)
+                            putExtra("dramaTitle", drama.title)
+                        })
+                    }
+                }
+            }
+        }
     }
 }
 

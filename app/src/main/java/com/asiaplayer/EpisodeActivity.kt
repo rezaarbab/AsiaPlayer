@@ -133,8 +133,8 @@ class EpisodeActivity : AppCompatActivity() {
 
     private fun tryLoadEpisodesOnHosts(hosts: List<String>, index: Int) {
         if (index >= hosts.size) {
-            log("All hosts failed loading drama $dramaId", true)
-            runOnUiThread { showEpisodesState("error") }
+            log("Direct requests failed — WebView fallback", true)
+            runOnUiThread { loadEpisodesViaWebView(hosts[0], hosts) }
             return
         }
         val host = hosts[index]
@@ -162,43 +162,101 @@ class EpisodeActivity : AppCompatActivity() {
                     return
                 }
                 SourceRegistry.setHost(this@EpisodeActivity, host)
-                try {
-                    val detail = JSONObject(body)
-                    val episodes = detail.getJSONArray("episodes")
-                    val thumbnail = detail.optString("thumbnail", "")
-                    val status = detail.optString("status", "")
-                    val description = detail.optString("description", "")
-                    val country = detail.optString("country", "")
-
-                    val items = mutableListOf<EpisodeItem>()
-                    for (i in 0 until episodes.length()) {
-                        val ep = episodes.getJSONObject(i)
-                        val numRaw = ep.optDouble("number", (i + 1).toDouble())
-                        val num = if (numRaw == numRaw.toLong().toDouble()) numRaw.toLong().toInt() else numRaw.toInt()
-                        items.add(EpisodeItem(ep.getInt("id"), num, ep.optInt("sub", 0) > 0))
-                    }
-
-                    log("${items.size} episodes")
-                    runOnUiThread {
-                        setupInfo(thumbnail, status, description, country, items.size)
-                        if (items.isEmpty()) {
-                            findViewById<TextView>(R.id.episodeErrorText)?.text = "No episodes available"
-                            showEpisodesState("error")
-                        } else {
-                            dataLoaded = true
-                            adapter = EpisodeAdapter(items) { ep ->
-                                if (!isGettingKey) getKeyAndPlay(ep)
-                            }
-                            recycler.adapter = adapter
-                            showEpisodesState("list")
-                        }
-                    }
-                } catch (e: Exception) {
-                    log("Error: ${e.message}", true)
-                    runOnUiThread { showEpisodesState("error") }
-                }
+                parseAndShowEpisodes(body, host)
             }
         })
+    }
+
+    private var wvEpDone = false
+    private var wvEpHosts = listOf<String>()
+    private var wvEpHostIndex = 0
+
+    private fun loadEpisodesViaWebView(host: String, allHosts: List<String>) {
+        wvEpDone = false
+        wvEpHosts = allHosts
+        wvEpHostIndex = allHosts.indexOf(host).coerceAtLeast(0)
+        log("WebView episode load on $host")
+
+        webView.addJavascriptInterface(object {
+            @android.webkit.JavascriptInterface
+            fun onResult(json: String) {
+                if (wvEpDone) return
+                val trimmed = json.trimStart()
+                if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+                    wvEpDone = true
+                    SourceRegistry.setHost(this@EpisodeActivity, host)
+                    parseAndShowEpisodes(json, host)
+                } else {
+                    log("WebView $host non-JSON — next", true)
+                    runOnUiThread { tryNextWebViewEpHost() }
+                }
+            }
+        }, "EpBridge")
+
+        webView.webViewClient = object : WebViewClient() {
+            override fun onReceivedSslError(v: WebView, h: SslErrorHandler, e: android.net.http.SslError) { h.proceed() }
+            override fun onPageFinished(view: WebView, url: String) {
+                if (wvEpDone) return
+                view.evaluateJavascript("""
+                    (function(){
+                        fetch('/api/DramaList/Drama/$dramaId?isq=true',{headers:{'Accept':'application/json'}})
+                        .then(function(r){return r.text();})
+                        .then(function(t){EpBridge.onResult(t);})
+                        .catch(function(e){EpBridge.onResult('ERR:'+e.message);});
+                    })();
+                """.trimIndent(), null)
+            }
+        }
+        webView.loadUrl("https://$host/")
+        handler.postDelayed({
+            if (!wvEpDone) { log("WebView $host timeout", true); runOnUiThread { tryNextWebViewEpHost() } }
+        }, 20_000L)
+    }
+
+    private fun tryNextWebViewEpHost() {
+        wvEpHostIndex++
+        if (wvEpHostIndex >= wvEpHosts.size) {
+            log("All WebView ep hosts failed", true)
+            showEpisodesState("error"); return
+        }
+        loadEpisodesViaWebView(wvEpHosts[wvEpHostIndex], wvEpHosts)
+    }
+
+    private fun parseAndShowEpisodes(body: String, host: String) {
+        try {
+            val detail = JSONObject(body)
+            val episodes = detail.getJSONArray("episodes")
+            val thumbnail = detail.optString("thumbnail", "")
+            val status = detail.optString("status", "")
+            val description = detail.optString("description", "")
+            val country = detail.optString("country", "")
+
+            val items = mutableListOf<EpisodeItem>()
+            for (i in 0 until episodes.length()) {
+                val ep = episodes.getJSONObject(i)
+                val numRaw = ep.optDouble("number", (i + 1).toDouble())
+                val num = if (numRaw == numRaw.toLong().toDouble()) numRaw.toLong().toInt() else numRaw.toInt()
+                items.add(EpisodeItem(ep.getInt("id"), num, ep.optInt("sub", 0) > 0))
+            }
+            log("${items.size} episodes from $host")
+            runOnUiThread {
+                setupInfo(thumbnail, status, description, country, items.size)
+                if (items.isEmpty()) {
+                    findViewById<TextView>(R.id.episodeErrorText)?.text = "No episodes available"
+                    showEpisodesState("error")
+                } else {
+                    dataLoaded = true
+                    adapter = EpisodeAdapter(items) { ep ->
+                        if (!isGettingKey) getKeyAndPlay(ep)
+                    }
+                    recycler.adapter = adapter
+                    showEpisodesState("list")
+                }
+            }
+        } catch (e: Exception) {
+            log("Parse error: ${e.message}", true)
+            runOnUiThread { showEpisodesState("error") }
+        }
     }
 
     private fun setupInfo(thumbnail: String, status: String, desc: String, country: String, epCount: Int) {
