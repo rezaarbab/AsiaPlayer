@@ -42,6 +42,22 @@
             android:layout_height="10dp"
             android:background="@drawable/bg_circle_accent"
             android:alpha="0.35" />
+
+        <TextView
+            android:id="@+id/sourceButton"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginStart="12dp"
+            android:gravity="center"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:text="SOURCE"
+            android:textColor="@color/text_secondary"
+            android:textSize="10sp"
+            android:fontFamily="sans-serif-medium"
+            android:background="@drawable/bg_circle_btn"
+            android:clickable="true"
+            android:focusable="true" />
     </LinearLayout>
 
     <!-- Search -->

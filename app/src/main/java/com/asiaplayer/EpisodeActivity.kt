@@ -126,7 +126,7 @@ class EpisodeActivity : AppCompatActivity() {
         recycler.adapter = adapter
 
         val request = Request.Builder()
-            .url("https://kisskh.is/api/DramaList/Drama/$dramaId?isq=true")
+            .url("https://${SourceRegistry.host(this)}/api/DramaList/Drama/$dramaId?isq=true")
             .header("User-Agent", "Mozilla/5.0")
             .header("Referer", "https://kisskh.is/")
             .build()
@@ -234,7 +234,8 @@ class EpisodeActivity : AppCompatActivity() {
         Toast.makeText(this, "Preparing episode ${ep.number}...", Toast.LENGTH_SHORT).show()
         log("Getting key ep ${ep.number}")
         val encoded = dramaTitle.replace(" ", "-").replace("(", "").replace(")", "")
-        val pageUrl = "https://kisskh.is/Drama/$encoded/Episode-${ep.number}?id=$dramaId&ep=${ep.id}&page=0&pageSize=100"
+        val host = SourceRegistry.host(this)
+        val pageUrl = "https://$host/Drama/$encoded/Episode-${ep.number}?id=$dramaId&ep=${ep.id}&page=0&pageSize=100"
         var keyFound = false
 
         webView.webViewClient = object : WebViewClient() {
@@ -273,14 +274,19 @@ class EpisodeActivity : AppCompatActivity() {
 
     private fun fetchSubs(ep: EpisodeItem, kkey: String) {
         val request = Request.Builder()
-            .url("https://kisskh.is/api/Sub/${ep.id}?kkey=$kkey")
+            .url("https://${SourceRegistry.host(this)}/api/Sub/${ep.id}?kkey=$kkey")
             .header("User-Agent", "Mozilla/5.0")
             .header("Referer", "https://kisskh.is/")
             .build()
 
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                runOnUiThread { unlock(); openPlayer(ep, "", kkey) }
+                log("Subtitle request failed; offering subtitle-free playback", true)
+                runOnUiThread {
+                    unlock()
+                    Toast.makeText(this@EpisodeActivity, "No subtitles available for this source", Toast.LENGTH_SHORT).show()
+                    showDialog(ep, emptyList(), kkey)
+                }
             }
             override fun onResponse(call: Call, response: Response) {
                 val body = response.body?.string() ?: ""
@@ -303,7 +309,13 @@ class EpisodeActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     log("Sub error: ${e.message}", true)
                 }
-                runOnUiThread { unlock(); showDialog(ep, tracks, kkey) }
+                runOnUiThread {
+                    unlock()
+                    if (tracks.isEmpty()) {
+                        Toast.makeText(this@EpisodeActivity, "No subtitles found — you can play without subtitles", Toast.LENGTH_SHORT).show()
+                    }
+                    showDialog(ep, tracks, kkey)
+                }
             }
         })
     }

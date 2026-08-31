@@ -10,6 +10,7 @@ import android.view.inputmethod.InputMethodManager
 import android.webkit.*
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import okhttp3.*
@@ -60,7 +61,6 @@ class MainActivity : AppCompatActivity() {
         .build()
 
     private val KILL_SWITCH_URL = "https://asiaplayer-control.your-worker.workers.dev/status"
-    private val KISSKH_SEARCH = "https://kisskh.is/api/DramaList/Search?q="
 
     private fun log(msg: String, isError: Boolean = false) {
         val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
@@ -94,6 +94,8 @@ class MainActivity : AppCompatActivity() {
         debugText = findViewById(R.id.debugText)
         debugScroll = findViewById(R.id.debugScroll)
         debugToggle = findViewById(R.id.debugToggle)
+
+        findViewById<TextView>(R.id.sourceButton).setOnClickListener { showSourcePicker() }
 
         recyclerView.layoutManager = GridLayoutManager(this, 2)
         WebViewHelper.setup(webView)
@@ -133,6 +135,19 @@ class MainActivity : AppCompatActivity() {
         (getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)?.hideSoftInputFromWindow(searchInput.windowToken, 0)
     }
 
+    private fun showSourcePicker() {
+        val hosts = SourceRegistry.all.flatMap { source -> source.hosts.map { "${source.label}  ·  $it" to it } }
+        val selected = SourceRegistry.host(this)
+        AlertDialog.Builder(this)
+            .setTitle("Select source")
+            .setSingleChoiceItems(hosts.map { it.first }.toTypedArray(), hosts.indexOfFirst { it.second == selected }) { dialog, which ->
+                SourceRegistry.setHost(this, hosts[which].second)
+                findViewById<TextView>(R.id.sourceButton).text = hosts[which].second.removePrefix("www.").uppercase()
+                log("Source selected: ${hosts[which].second}")
+                dialog.dismiss()
+            }.show()
+    }
+
     private fun showState(state: String) {
         loadingBar.visibility = if (state == "loading") View.VISIBLE else View.GONE
         recyclerView.visibility = if (state == "list") View.VISIBLE else View.GONE
@@ -141,7 +156,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun testConnection() {
-        val req = Request.Builder().url("https://kisskh.is/api/DramaList/Search?q=test&type=0")
+        val req = Request.Builder().url("https://${SourceRegistry.host(this)}/api/DramaList/Search?q=test&type=0")
             .header("User-Agent", "Mozilla/5.0").build()
         client.newCall(req).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
@@ -184,7 +199,7 @@ class MainActivity : AppCompatActivity() {
         showState("loading")
         log("Searching: $query")
 
-        val url = "$KISSKH_SEARCH${Uri.encode(query)}&type=0"
+        val url = "https://${SourceRegistry.host(this)}/api/DramaList/Search?q=${Uri.encode(query)}&type=0"
         val req = Request.Builder().url(url)
             .header("User-Agent", "Mozilla/5.0")
             .header("Referer", "https://kisskh.is/")

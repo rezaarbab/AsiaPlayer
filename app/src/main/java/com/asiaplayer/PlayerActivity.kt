@@ -66,13 +66,16 @@ class PlayerActivity : AppCompatActivity() {
 
         findViewById<android.view.View>(R.id.playerBack).setOnClickListener { finish() }
         findViewById<TextView>(R.id.playerRetry).setOnClickListener { startPlayback() }
-        findViewById<TextView>(R.id.subtitleMenu).setOnClickListener { showSubtitleMenu() }
+        val subtitleMenu = findViewById<TextView>(R.id.subtitleMenu)
+        subtitleMenu.setOnClickListener { showSubtitleMenu() }
+        subtitleMenu.alpha = 0f
+        subtitleMenu.visibility = View.INVISIBLE
         playerView.setControllerVisibilityListener(StyledPlayerView.ControllerVisibilityListener { visibility ->
-            findViewById<TextView>(R.id.subtitleMenu).animate()
+            subtitleMenu.animate()
                 .alpha(if (visibility == View.VISIBLE) 1f else 0f)
                 .setDuration(180)
                 .withEndAction {
-                    findViewById<TextView>(R.id.subtitleMenu).visibility =
+                    subtitleMenu.visibility =
                         if (visibility == View.VISIBLE) View.VISIBLE else View.INVISIBLE
                 }.start()
         })
@@ -148,7 +151,7 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
 
-        val pageUrl = "https://kisskh.is/Drama/X/Episode-1?id=$dramaId&ep=$epId&page=0&pageSize=100"
+        val pageUrl = "https://${SourceRegistry.host(this)}/Drama/X/Episode-1?id=$dramaId&ep=$epId&page=0&pageSize=100"
         wv.loadUrl(pageUrl)
 
         timeoutRunnable?.let { handler.removeCallbacks(it) }
